@@ -1,7 +1,8 @@
 import sqlite3
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
+import csv
 
 #This class is for everything database related
 class DatabaseManager:
@@ -183,8 +184,12 @@ class StoreApp:
         bottom_frame.pack(fill="x", pady=10)
 
         delete_btn = tk.Button(bottom_frame, text="Delete Selected Row", bg="red", fg="white", command=self.delete_record)
-        delete_btn.pack(side=tk.LEFT)
+        delete_btn.pack(side=tk.LEFT, padx=5)
 
+        export_btn = tk.Button(bottom_frame, text="Export to Excel", bg="#006400", fg="white", command=self.export_to_excel)
+        export_btn.pack(side=tk.LEFT, padx=5)
+
+        #He placeholder ma bt bayyin b bayyin mahala l hateto b show records and __init__ he bas just to be safe
         self.status_label = tk.Label(bottom_frame, text="Balance: $0.00", font=("Arial", 12, "bold"))
         self.status_label.pack(side=tk.RIGHT)
 
@@ -283,7 +288,32 @@ class StoreApp:
         report = f"USD Cash: ${total_usd_cash:,.2f} | USD Card ${total_usd_card:,.2f}\n LBP Cash: {total_lbp_cash:,.0f} L.L | LBP Card: {total_lbp_card:,.0f} L.L"
         self.status_label.config(text=report, font=("Arial", 10, "bold"), justify=tk.LEFT)
         
+    def export_to_excel(self):
+        filename = filedialog.asksaveasfilename(
+            initialdir="/",
+            title="Save as",
+            filetypes=(("CSV File", "*csv"), ("All Files", "*.*")),
+            defaultextension=".csv"
+        )
+
+        if not filename:
+            return
         
+        store_name = self.store_combo.get()
+        rows = self.db.get_transactions(store_name)
+
+        try:
+            with open(filename, mode='w', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file)
+
+                headers = ["ID", "Date", "Type", "Category", "Amount", "Currency", "Method"]
+                writer.writerow(headers)
+
+                writer.writerows(rows)
+
+            messagebox.showinfo("Succes", f"Data exported to {filename}")   
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not save file: {e}")
 
     def setup_styles(self):
         style = ttk.Style()
