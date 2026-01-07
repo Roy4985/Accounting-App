@@ -171,6 +171,27 @@ class StoreApp:
         tree_frame = tk.Frame(self.root)
         tree_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
+        filter_frame = tk.Frame(tree_frame)
+        filter_frame.pack(fill="x", pady=5)
+
+        tk.Label(filter_frame, text="Filter Type:").pack(side=tk.LEFT)
+        self.filter_type_var = tk.StringVar()
+        self.filter_type = ttk.Combobox(filter_frame, textvariable="self.filter_type_var", values=["All", "Income", "Expense"], state="readonly", width=10)
+        self.filter_type.current(0)
+        self.filter_type.pack(side=tk.LEFT, padx=5)
+
+        tk.Label(filter_frame, text="Filter Category:").pack(side=tk.LEFT)
+        full_cat_list = ["All"] + self.category_list
+        self.filter_cat_var = tk.StringVar()
+        self.filter_cat = ttk.Combobox(filter_frame, textvariable="self.filter_cat_var", values= full_cat_list, state="readonly", width=15)
+        self.filter_cat.current(0)
+        self.filter_cat.pack(side=tk.LEFT, padx=5)
+
+        self.filter_type.bind("<<ComboboxSelected>>", lambda e: self.view_records())
+        self.filter_cat.bind("<<ComboboxSelected>>", lambda e: self.view_records())
+
+        tk.Button(filter_frame, text="Reset Filter", command = self.reset_filters).pack(side=tk.LEFT, padx=10)
+
         cols = ("ID", "date", "Type", "Category", "Amount", "Currency", "Payment Method")
         self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings")
 
@@ -192,6 +213,11 @@ class StoreApp:
         #He placeholder ma bt bayyin b bayyin mahala l hateto b show records and __init__ he bas just to be safe
         self.status_label = tk.Label(bottom_frame, text="Balance: $0.00", font=("Arial", 12, "bold"))
         self.status_label.pack(side=tk.RIGHT)
+
+    def reset_filters(self):
+        self.filter_cat.current(0)
+        self.filter_type.current(0)
+        self.view_records()
 
     def delete_record(self):
         selected_item = self.tree.selection()
@@ -246,6 +272,9 @@ class StoreApp:
 
         rows = self.db.get_transactions(store_name)
 
+        f_type = self.filter_type.get()
+        f_cat = self.filter_cat.get()
+
         total_usd_cash = 0
         total_usd_card = 0
         total_lbp_cash = 0
@@ -256,7 +285,17 @@ class StoreApp:
 
         count = 0
 
+
         for row in rows:
+            t_type = row[2]
+            categ = row[3]
+
+            if f_type != "All" and t_type != f_type:
+                continue
+
+            if f_cat != "All" and categ != f_cat:
+                continue
+
             if count % 2 == 0:
                 self.tree.insert("", "end", values=row, tags=("evenrow",))
             else:
@@ -264,10 +303,12 @@ class StoreApp:
             
             count += 1
 
-            t_type = row[2]
+            
             amount = float(row[4])
             curr = row[5]
             paym = row[6]
+
+            
 
             if curr == "USD ($)":
                 if paym == "Cash":
