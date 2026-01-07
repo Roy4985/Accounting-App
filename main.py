@@ -97,6 +97,16 @@ class StoreApp:
 
         self.setup_styles()
 
+        self.category_list = [
+            "Credit Card Commission",
+            "Salaries",
+            "Rent",
+            "Yearly Fees",
+            "Electricity Chiller",
+            "Phone",
+            "Various",  
+        ]
+
         self.setup_header()
         self.setup_inputs()
         self.setup_table()
@@ -133,8 +143,10 @@ class StoreApp:
         
 
         tk.Label(input_frame, text="Category").grid(row=0, column=1)
-        self.cat_entry = tk.Entry(input_frame)
-        self.cat_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.cat_var = tk.StringVar()
+        self.cat_combo = ttk.Combobox(input_frame, textvariable=self.cat_var, values=self.category_list, state = "readonly")
+        self.cat_combo.current(0)
+        self.cat_combo.grid(row=1, column=1, padx=5, pady=5)
 
         tk.Label(input_frame, text="Currency").grid(row=0, column=2)
         self.currency_var = tk.StringVar()
@@ -196,7 +208,7 @@ class StoreApp:
     def add_records(self):
         store = self.store_combo.get()
         t_type = self.type_combo.get()
-        cat = self.cat_entry.get()
+        cat = self.cat_combo.get()
         amt = self.amount_entry.get()
         cur = self.cur_combo.get()
         paym = self.paym_combo.get()
@@ -216,7 +228,7 @@ class StoreApp:
 
             self.view_records()
 
-            self.cat_entry.delete(0, tk.END)
+            self.cat_combo.set('')
             self.amount_entry.delete(0, tk.END)
         except ValueError:
             messagebox.showerror("Error", "Amount must be a number")
