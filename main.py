@@ -92,9 +92,23 @@ class StoreApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Management System")
+        self.root.state("zoomed")
         self.root.geometry("900x600")
 
         self.db = DatabaseManager()
+
+        #Color dictionnary
+        self.colors = {
+            "bg": "#f0f2f5",         
+            "header": "#2c3e50",      
+            "text": "#ffffff",        
+            "accent": "#2980b9",     
+            "success": "#27ae60",    
+            "danger": "#c0392b",      
+            "white": "#ffffff"
+        }
+
+        self.root.configure(bg=self.colors["bg"])
 
         self.setup_styles()
 
@@ -108,6 +122,7 @@ class StoreApp:
             "Various",  
         ]
 
+
         self.setup_header()
         self.setup_inputs()
         self.setup_table()
@@ -116,11 +131,12 @@ class StoreApp:
 
     def setup_header(self):
         #the frame for the header
-        header_frame = tk.Frame(self.root, pady = 10, bg = "#f0f0f0")
+        header_frame = tk.Frame(self.root,bg =self.colors["header"], height=60)
         header_frame.pack(fill="x")
 
         #Now the Title on top of the page
-        tk.Label(header_frame, text="Select Branch", bg="#f0f0f0", font=("Arial", 12)).pack(side=tk.LEFT, padx=10)
+        title_label = tk.Label(header_frame, text="Select Branch", bg=self.colors["header"], font=("Sego UI", 18, "bold"), fg="white")
+        title_label.pack(side=tk.LEFT, padx=20, pady=10)
 
         #Now under it we want to branch dropdown menu
         self.store_var = tk.StringVar()
@@ -128,90 +144,111 @@ class StoreApp:
 
         self.store_combo['values'] = self.db.get_store_names()
         self.store_combo.current(0)
-        self.store_combo.pack(side=tk.LEFT)
+        self.store_combo.pack(side=tk.RIGHT, padx=20, pady=10)
 
         self.store_combo.bind("<<ComboboxSelected>>", lambda e: self.view_records())
 
     def setup_inputs(self):
-        input_frame = tk.LabelFrame(self.root, text="New Transaction", padx= 10, pady= 10)
-        input_frame.pack(fill="x", padx=20, pady=10)
+        master_frame = tk.Frame(self.root, bg=self.colors["bg"])
+        master_frame.pack(fill="x", padx=20, pady=15)
 
-        tk.Label(input_frame, text="Type").grid(row=0, column=0)
+        input_frame = tk.LabelFrame(master_frame, text="New Transaction")
+        input_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=(0,10))
+
+        tk.Label(input_frame, text="Type", bg=self.colors["bg"]).grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.type_var = tk.StringVar()
-        self.type_combo = ttk.Combobox(input_frame, textvariable=self.type_var, values=["Income","Expense"], state="readonly")
+        self.type_combo = ttk.Combobox(input_frame, textvariable=self.type_var, values=["Income","Expense"], state="readonly", width=12)
         self.type_combo.current(0)
-        self.type_combo.grid(row=1, column=0, padx=5, pady=5)
+        self.type_combo.grid(row=0, column=1, padx=5, pady=5)
         
 
-        tk.Label(input_frame, text="Category").grid(row=0, column=1)
+        tk.Label(input_frame, text="Category", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=5, sticky="w")
         self.cat_var = tk.StringVar()
-        self.cat_combo = ttk.Combobox(input_frame, textvariable=self.cat_var, values=self.category_list, state = "readonly")
+        self.cat_combo = ttk.Combobox(input_frame, textvariable=self.cat_var, values=self.category_list, state = "readonly", width=15)
         self.cat_combo.current(0)
-        self.cat_combo.grid(row=1, column=1, padx=5, pady=5)
+        self.cat_combo.grid(row=0, column=3, padx=5, pady=5)
 
-        tk.Label(input_frame, text="Currency").grid(row=0, column=2)
+        tk.Label(input_frame, text="Amount ($)", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.amount_entry = tk.Entry(input_frame, width=15)
+        self.amount_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        tk.Label(input_frame, text="Currency", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5, sticky="w")
         self.currency_var = tk.StringVar()
-        self.cur_combo = ttk.Combobox(input_frame, textvariable=self.currency_var, values=["USD ($)", "Lira (LBP)"], state="readonly")
+        self.cur_combo = ttk.Combobox(input_frame, textvariable=self.currency_var, values=["USD ($)", "Lira (LBP)"], state="readonly", width=12)
         self.cur_combo.current(0)
-        self.cur_combo.grid(row=1, column=2, padx=5, pady=5)
+        self.cur_combo.grid(row=1, column=3, padx=5, pady=5)
 
-        tk.Label(input_frame, text="Payment Method").grid(row=2, column=0)
+        tk.Label(input_frame, text="Payment Method", bg=self.colors["bg"]).grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.paym_var = tk.StringVar()
-        self.paym_combo = ttk.Combobox(input_frame, textvariable=self.paym_var, values=["Cash", "Card"], state="readonly")
+        self.paym_combo = ttk.Combobox(input_frame, textvariable=self.paym_var, values=["Cash", "Card"], state="readonly", width=12)
         self.paym_combo.current(0)
-        self.paym_combo.grid(row=3, column=0, padx=5, pady=5)
+        self.paym_combo.grid(row=2, column=1, padx=5, pady=5) 
 
-        tk.Label(input_frame, text="Amount ($)").grid(row=2, column=1)
-        self.amount_entry = tk.Entry(input_frame)
-        self.amount_entry.grid(row=3, column=1, padx=5, pady=5)
+        add_btn = tk.Button(input_frame, text="+ Add Record", bg=self.colors["success"], fg="white", font=("Sego UI", 10, "bold") ,command=self.add_records)
+        add_btn.grid(row=2, column=2, columnspan=2, stick="ew", padx=5, pady=5)
 
-        tk.Button(input_frame, text="+ Add Transaction", bg="green", fg="white", command=self.add_records).grid(row=3, column=2, padx=10, pady=5)
+        filter_frame = ttk.LabelFrame(master_frame, text="Filters")
+        filter_frame.pack(side=tk.RIGHT, fill="both", expand=True, padx=(10,0))
 
-    def setup_table(self):
-        tree_frame = tk.Frame(self.root)
-        tree_frame.pack(fill="both", expand=True, padx=20, pady=10)
-
-        filter_frame = tk.Frame(tree_frame)
-        filter_frame.pack(fill="x", pady=5)
-
-        tk.Label(filter_frame, text="Filter Type:").pack(side=tk.LEFT)
+        tk.Label(filter_frame, text="Filter Type:", bg=self.colors["bg"]).grid(row=0, column=0, padx=5, pady=10)
         self.filter_type_var = tk.StringVar()
         self.filter_type = ttk.Combobox(filter_frame, textvariable="self.filter_type_var", values=["All", "Income", "Expense"], state="readonly", width=10)
         self.filter_type.current(0)
-        self.filter_type.pack(side=tk.LEFT, padx=5)
+        self.filter_type.grid(row=0, column=1, padx=5)
 
-        tk.Label(filter_frame, text="Filter Category:").pack(side=tk.LEFT)
+        tk.Label(filter_frame, text="Filter Category:", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=10)
         full_cat_list = ["All"] + self.category_list
         self.filter_cat_var = tk.StringVar()
         self.filter_cat = ttk.Combobox(filter_frame, textvariable="self.filter_cat_var", values= full_cat_list, state="readonly", width=15)
         self.filter_cat.current(0)
-        self.filter_cat.pack(side=tk.LEFT, padx=5)
+        self.filter_cat.grid(row=1, column=1, padx=5)
 
         self.filter_type.bind("<<ComboboxSelected>>", lambda e: self.view_records())
         self.filter_cat.bind("<<ComboboxSelected>>", lambda e: self.view_records())
 
-        tk.Button(filter_frame, text="Reset Filter", command = self.reset_filters).pack(side=tk.LEFT, padx=10)
+        tk.Button(filter_frame, text="Reset Filter", command = self.reset_filters).grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
 
-        cols = ("ID", "date", "Type", "Category", "Amount", "Currency", "Payment Method")
+
+    def setup_table(self):
+        main_content = tk.Frame(self.root, bg=self.colors["bg"])
+        main_content.pack(fill="both", expand=True, padx=20, pady=(0,20))
+
+
+        tree_frame = tk.Frame(main_content)
+        tree_frame.pack(fill="both", expand=True)
+
+        cols = ("ID", "Date", "Type", "Category", "Amount", "Currency", "Payment Method")
         self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings")
+
+        self.tree.column("ID", width=50, anchor=tk.CENTER)
+        self.tree.column("Date", width=100, anchor=tk.CENTER)
+        self.tree.column("Type", width=80, anchor=tk.CENTER)
+        self.tree.column("Category", width=150, anchor=tk.W)
+        self.tree.column("Amount", width=100, anchor=tk.E)  
+        self.tree.column("Currency", width=80, anchor=tk.CENTER)
+        self.tree.column("Payment Method", width=80, anchor=tk.CENTER)
 
         for col in cols:
             self.tree.heading(col, text=col)
-            self.tree.column(col, width=100)
+
+        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill="y")
         
         self.tree.pack(fill="both", expand=True)
 
-        bottom_frame = tk.Frame(tree_frame)
+        bottom_frame = tk.Frame(main_content, bg=self.colors["bg"])
         bottom_frame.pack(fill="x", pady=10)
 
-        delete_btn = tk.Button(bottom_frame, text="Delete Selected Row", bg="red", fg="white", command=self.delete_record)
+        delete_btn = tk.Button(bottom_frame, text="Delete Selected", bg=self.colors["danger"], fg="white", command=self.delete_record)
         delete_btn.pack(side=tk.LEFT, padx=5)
 
-        export_btn = tk.Button(bottom_frame, text="Export to Excel", bg="#006400", fg="white", command=self.export_to_excel)
+        export_btn = tk.Button(bottom_frame, text="Export to Excel", bg=self.colors["accent"], fg="white", command=self.export_to_excel)
         export_btn.pack(side=tk.LEFT, padx=5)
 
         #He placeholder ma bt bayyin b bayyin mahala l hateto b show records and __init__ he bas just to be safe
-        self.status_label = tk.Label(bottom_frame, text="Balance: $0.00", font=("Arial", 12, "bold"))
+        self.status_label = tk.Label(bottom_frame, text="Loading...", font=("Sego UI", 10, "bold"), bg=self.colors["bg"], justify=tk.RIGHT)
         self.status_label.pack(side=tk.RIGHT)
 
     def reset_filters(self):
@@ -364,18 +401,19 @@ class StoreApp:
         style.configure("Treeview", 
                         background="white",
                         foreground="black",
-                        rowheight=25, 
+                        rowheight=30, 
                         fieldbackground="white",
-                        font=("Arial", 10))
+                        font=("Sego UI", 10))
         
         
         style.configure("Treeview.Heading", 
-                        font=("Arial", 11, "bold"),
-                        background="#dddddd")
+                        font=("Sego UI", 11, "bold"),
+                        background="#dfe6e9",
+                        foreground="#2d3436")
         
         
-        style.configure("TCombobox", padding=5)
-        style.configure("TEntry", padding=5)
+        style.configure("TLabelframe", background=self.colors["bg"])
+        style.configure("TLabelframe", font=("Sego UI", 10, "bold"), background=self.colors["bg"], foreground="#2c3e50")
 
 
 if __name__ == "__main__":
