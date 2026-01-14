@@ -36,6 +36,7 @@ class DatabaseManager:
                        )
         """)
 
+
         self.seed_data()
 
     #This will check if the stores table is empty, if it is, it will add the default stores (he bas ta nzid l branches)
@@ -152,21 +153,28 @@ class StoreApp:
         master_frame = tk.Frame(self.root, bg=self.colors["bg"])
         master_frame.pack(fill="x", padx=20, pady=15)
 
+        #Input side 
         input_frame = tk.LabelFrame(master_frame, text="New Transaction")
         input_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=(0,10))
 
-        tk.Label(input_frame, text="Type", bg=self.colors["bg"]).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        tk.Label(input_frame, text="Date", bg=self.colors["bg"]).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.date_entry = tk.Entry(input_frame, width=12)
+        self.date_entry.grid(row=0, column=1, padx=5, pady=5)
+        #autofill with today's date
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.date_entry.insert(0, today)
+
+        tk.Label(input_frame, text="Type", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=5, sticky="w")
         self.type_var = tk.StringVar()
         self.type_combo = ttk.Combobox(input_frame, textvariable=self.type_var, values=["Income","Expense"], state="readonly", width=12)
         self.type_combo.current(0)
-        self.type_combo.grid(row=0, column=1, padx=5, pady=5)
-        
+        self.type_combo.grid(row=0, column=3, padx=5, pady=5)
 
-        tk.Label(input_frame, text="Category", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        tk.Label(input_frame, text="Category", bg=self.colors["bg"]).grid(row=0, column=4, padx=5, pady=5, sticky="w")
         self.cat_var = tk.StringVar()
         self.cat_combo = ttk.Combobox(input_frame, textvariable=self.cat_var, values=self.category_list, state = "readonly", width=15)
         self.cat_combo.current(0)
-        self.cat_combo.grid(row=0, column=3, padx=5, pady=5)
+        self.cat_combo.grid(row=0, column=5, padx=5, pady=5)
 
         tk.Label(input_frame, text="Amount ($)", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.amount_entry = tk.Entry(input_frame, width=15)
@@ -178,15 +186,16 @@ class StoreApp:
         self.cur_combo.current(0)
         self.cur_combo.grid(row=1, column=3, padx=5, pady=5)
 
-        tk.Label(input_frame, text="Payment Method", bg=self.colors["bg"]).grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        tk.Label(input_frame, text="Payment Method", bg=self.colors["bg"]).grid(row=1, column=4, padx=5, pady=5, sticky="w")
         self.paym_var = tk.StringVar()
         self.paym_combo = ttk.Combobox(input_frame, textvariable=self.paym_var, values=["Cash", "Card"], state="readonly", width=12)
         self.paym_combo.current(0)
-        self.paym_combo.grid(row=2, column=1, padx=5, pady=5) 
+        self.paym_combo.grid(row=1, column=5, padx=5, pady=5) 
 
         add_btn = tk.Button(input_frame, text="+ Add Record", bg=self.colors["success"], fg="white", font=("Sego UI", 10, "bold") ,command=self.add_records)
-        add_btn.grid(row=2, column=2, columnspan=2, stick="ew", padx=5, pady=5)
+        add_btn.grid(row=2, column=0, columnspan=6, stick="ew", padx=10, pady=10)
 
+        #filter side
         filter_frame = ttk.LabelFrame(master_frame, text="Filters")
         filter_frame.pack(side=tk.RIGHT, fill="both", expand=True, padx=(10,0))
 
@@ -281,6 +290,11 @@ class StoreApp:
         cur = self.cur_combo.get()
         paym = self.paym_combo.get()
 
+        date_val = self.date_entry.get()
+
+        if not date_val.strip():
+            date_val = datetime.now().strftime("%Y-%m-%d")
+
         if not cat or not amt:
             messagebox.showerror("Error", "Please fill all the fields")
             return
@@ -288,16 +302,19 @@ class StoreApp:
         try:
             val = float(amt)
 
-            today = datetime.now().strftime("%d-%m-%Y")
+            today = date_val
 
             self.db.add_transactions(store, today, t_type, cat, val, cur, paym)
 
             messagebox.showinfo("Succes", "Transaction Saved!")
 
-            self.view_records()
-
             self.cat_combo.set('')
             self.amount_entry.delete(0, tk.END)
+
+            self.date_entry.delete(0, tk.END)
+            self.date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
+
+            self.view_records()
         except ValueError:
             messagebox.showerror("Error", "Amount must be a number")
 
