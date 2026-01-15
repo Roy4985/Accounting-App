@@ -205,17 +205,29 @@ class StoreApp:
         self.filter_type.current(0)
         self.filter_type.grid(row=0, column=1, padx=5)
 
-        tk.Label(filter_frame, text="Filter Category:", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=10)
+        tk.Label(filter_frame, text="Filter Category:", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=10)
         full_cat_list = ["All"] + self.category_list
         self.filter_cat_var = tk.StringVar()
         self.filter_cat = ttk.Combobox(filter_frame, textvariable="self.filter_cat_var", values= full_cat_list, state="readonly", width=15)
         self.filter_cat.current(0)
-        self.filter_cat.grid(row=1, column=1, padx=5)
+        self.filter_cat.grid(row=0, column=3, padx=5)
+
+        tk.Label(filter_frame, text="From:", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5)
+        self.date_from = tk.Entry(filter_frame, width=12)
+        self.date_from.grid(row=1, column=1, padx=5)
+
+        tk.Label(filter_frame, text="To:", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5)
+        self.date_to = tk.Entry(filter_frame, width=12)
+        self.date_to.grid(row=1, column=3, padx=5)
+
+        btn_frame = tk.Frame(filter_frame, )
+        btn_frame.grid(row=2, column=0, columnspan=4, pady=5)
+
+        tk.Button(btn_frame, text="Apply Filter", bg="#2c3e50", fg="white", command=self.view_records).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Reset", command = self.reset_filters).pack(side=tk.LEFT, padx=5)
 
         self.filter_type.bind("<<ComboboxSelected>>", lambda e: self.view_records())
         self.filter_cat.bind("<<ComboboxSelected>>", lambda e: self.view_records())
-
-        tk.Button(filter_frame, text="Reset Filter", command = self.reset_filters).grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
 
 
     def setup_table(self):
@@ -263,6 +275,8 @@ class StoreApp:
     def reset_filters(self):
         self.filter_cat.current(0)
         self.filter_type.current(0)
+        self.date_from.delete(0, tk.END)
+        self.date_to.delete(0, tk.END)
         self.view_records()
 
     def delete_record(self):
@@ -329,6 +343,9 @@ class StoreApp:
         f_type = self.filter_type.get()
         f_cat = self.filter_cat.get()
 
+        start_date = self.date_from.get()
+        end_date = self.date_to.get()
+
         total_usd_cash = 0
         total_usd_card = 0
         total_lbp_cash = 0
@@ -343,11 +360,18 @@ class StoreApp:
         for row in rows:
             t_type = row[2]
             categ = row[3]
+            date = row[1]
 
             if f_type != "All" and t_type != f_type:
                 continue
 
             if f_cat != "All" and categ != f_cat:
+                continue
+
+            if start_date and date < start_date:
+                continue
+
+            if end_date and date > end_date:
                 continue
 
             if count % 2 == 0:
