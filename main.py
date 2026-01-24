@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 import csv
+from tkcalendar import DateEntry
 
 #This class is for everything database related
 class DatabaseManager:
@@ -42,7 +43,7 @@ class DatabaseManager:
     #This will check if the stores table is empty, if it is, it will add the default stores (he bas ta nzid l branches)
     def seed_data(self):
         default_branches = ["LeMall Dbayye", "City Center", "City Mall", "Koura Branch",
-                                "Main Vault", "TVA Account", "Bank Commission"]
+                                "Main Vault", "TVA Account", "Bank Commission", "Cost of goods", "Freight"]
         
         for branch in default_branches:
             self.c.execute("SELECT count(*) FROM stores WHERE name = ?", (branch,))
@@ -88,7 +89,7 @@ class DatabaseManager:
         self.c.execute("DELETE FROM transactions WHERE id = ?", (trans_id,))
         self.conn.commit()
 
-    def delete_smart_chain(self, main_id, store_name, t_date, amount, p_method):
+    def delete_smart_chain(self, main_id, store_name, t_date, amount, p_method, currency):
         self.delete_transaction(main_id)
 
         self.c.execute("SELECT id FROM stores WHERE name = ?", (store_name,))
@@ -102,43 +103,84 @@ class DatabaseManager:
         amt_main = round(val * 0.15,2)
         amt_tva = round(val * 0.07,2)
 
+        def delete_single_match(s_id, date, cat, amt):
+            sql = """
+                SELECT id FROM transactions 
+                WHERE store_id=? AND date=? AND category=? AND amount=? AND currency=? AND payment_method=? 
+                LIMIT 1
+            """
+            self.c.execute(sql, (s_id, date, cat, amt, currency, p_method))
+            
+            match = self.c.fetchone()
+            if match:
+                self.c.execute("DELETE FROM transactions WHERE id=?", (match[0],))
+
         desc_main_out = "Main (15%)"
         desc_main_in  = f"from {store_name}"
         
         desc_tva_out  = "TVA (7%)"
         desc_tva_in   = f"from {store_name}"
         
-        self.c.execute("DELETE FROM transactions WHERE date=? AND category=? AND amount=?", 
-                       (t_date, desc_main_out, amt_main))
+        delete_single_match(src_id, t_date, desc_main_out, amt_main)
+        
         
         self.c.execute("SELECT id FROM stores WHERE name='Main Vault'")
-        vault_id = self.c.fetchone()[0]
-        self.c.execute("DELETE FROM transactions WHERE store_id=? AND date=? AND category=? AND amount=?", 
-                       (vault_id, t_date, desc_main_in, amt_main))
+        res_vault = self.c.fetchone()
+        if res_vault:
+            delete_single_match(res_vault[0], t_date, desc_main_in, amt_main)
 
-        self.c.execute("DELETE FROM transactions WHERE date=? AND category=? AND amount=?", 
-                       (t_date, desc_tva_out, amt_tva))
+        delete_single_match(src_id, t_date, desc_tva_out, amt_tva)
         
         self.c.execute("SELECT id FROM stores WHERE name='TVA Account'")
-        tva_id = self.c.fetchone()[0]
-        self.c.execute("DELETE FROM transactions WHERE store_id=? AND date=? AND category=? AND amount=?", 
-                       (tva_id, t_date, desc_tva_in, amt_tva))
+        res_tva = self.c.fetchone()
+        if res_tva:
+            delete_single_match(res_tva[0], t_date, desc_tva_in, amt_tva)
 
         if p_method == "Card":
             amt_comm = round(val * 0.03, 2)
             desc_comm_out = "Card Commission (3%)"
             desc_comm_in  = f"from {store_name}"
             
-            self.c.execute("DELETE FROM transactions WHERE date=? AND category=? AND amount=?", 
-                           (t_date, desc_comm_out, amt_comm))
+            delete_single_match(src_id, t_date, desc_comm_out, amt_comm)
             
-            self.c.execute("SELECT id FROM stores WHERE name='Bank Commission'") # Check spelling in your DB
-            bank_id = self.c.fetchone()[0]
-            self.c.execute("DELETE FROM transactions WHERE store_id=? AND date=? AND category=? AND amount=?", 
-                           (bank_id, t_date, desc_comm_in, amt_comm))
+            self.c.execute("SELECT id FROM stores WHERE name='Bank Commission'")
+            res_bank = self.c.fetchone()
+            if res_bank:
+                delete_single_match(res_bank[0], t_date, desc_comm_in, amt_comm)
 
         self.conn.commit()
-        print("Cascading delete complete.")
+        print("Cascading delete complete (Single items only).")
+
+    def delete_cost_of_goods_chain(self, expense_id, store_name, t_date, amount, currency):
+        self.delete_transaction(expense_id)
+
+        val = float(amount)
+        amt_freight = round(val * 0.33, 2)
+        desc_in = f"from {store_name}"
+
+        def delete_single_match(s_name, trans_type, cat, amt):
+            self.c.execute("SELECT id FROM stores WHERE name=?", (s_name,))
+            res_store = self.c.fetchone()
+            if not res_store: return
+            s_id = res_store[0]
+
+            sql = """SELECT id FROM transactions 
+                     WHERE store_id=? AND date=? AND type=? AND category=? AND amount=? AND currency=? 
+                     LIMIT 1"""
+            self.c.execute(sql, (s_id, t_date, trans_type, cat, amt, currency))
+            match = self.c.fetchone()
+            
+            if match:
+                self.c.execute("DELETE FROM transactions WHERE id=?", (match[0],))
+        
+        delete_single_match("Cost of goods", "Income", desc_in, val)
+
+        delete_single_match(store_name, "Expense", "Freight", amt_freight)
+
+        delete_single_match("Freight", "Income", desc_in, amt_freight)
+        
+        self.conn.commit()
+        print("Cost of Goods chain deleted.")
 
         
 #This class will be used for the user interface (GUI)
@@ -173,7 +215,8 @@ class StoreApp:
             "Yearly Fees",
             "Electricity Chiller",
             "Phone",
-            "Various",  
+            "Various",
+            "Cost of goods",  
         ]
 
 
@@ -212,11 +255,8 @@ class StoreApp:
         input_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=(0,10))
 
         tk.Label(input_frame, text="Date", bg=self.colors["bg"]).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.date_entry = tk.Entry(input_frame, width=12)
+        self.date_entry = DateEntry(input_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='y-mm-dd')
         self.date_entry.grid(row=0, column=1, padx=5, pady=5)
-        #autofill with today's date
-        today = datetime.now().strftime("%Y-%m-%d")
-        self.date_entry.insert(0, today)
 
         tk.Label(input_frame, text="Type", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=5, sticky="w")
         self.type_var = tk.StringVar()
@@ -271,11 +311,13 @@ class StoreApp:
         self.filter_cat.grid(row=0, column=3, padx=5)
 
         tk.Label(filter_frame, text="From:", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5)
-        self.date_from = tk.Entry(filter_frame, width=12)
+        self.date_from = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        self.date_from.delete(0, "end")
         self.date_from.grid(row=1, column=1, padx=5)
 
         tk.Label(filter_frame, text="To:", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5)
-        self.date_to = tk.Entry(filter_frame, width=12)
+        self.date_to = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        self.date_to.delete(0, "end")
         self.date_to.grid(row=1, column=3, padx=5)
 
         btn_frame = tk.Frame(filter_frame, )
@@ -297,9 +339,11 @@ class StoreApp:
         tree_frame.pack(fill="both", expand=True)
 
         cols = ("ID", "Date", "Type", "Category", "Amount", "Currency", "Payment Method")
-        self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings")
 
-        self.tree.column("ID", width=50, anchor=tk.CENTER)
+        visible_cols = ("Date", "Type", "Category", "Amount", "Currency", "Payment Method")
+
+        self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings", displaycolumns=visible_cols)
+
         self.tree.column("Date", width=100, anchor=tk.CENTER)
         self.tree.column("Type", width=80, anchor=tk.CENTER)
         self.tree.column("Category", width=150, anchor=tk.W)
@@ -307,7 +351,7 @@ class StoreApp:
         self.tree.column("Currency", width=80, anchor=tk.CENTER)
         self.tree.column("Payment Method", width=80, anchor=tk.CENTER)
 
-        for col in cols:
+        for col in visible_cols:
             self.tree.heading(col, text=col)
 
         scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
@@ -366,12 +410,16 @@ class StoreApp:
             record_id = row_data[0]
             record_date = row_data[1]
             record_type = row_data[2]
+            record_cat = row_data[3]
             record_store = self.store_combo.get()
             record_amount = row_data[4]
+            record_curr = row_data[5]
             record_paym = row_data[6]
 
             if record_type == "Income":
-                self.db.delete_smart_chain(record_id, record_store, record_date, record_amount, record_paym)
+                self.db.delete_smart_chain(record_id, record_store, record_date, record_amount, record_paym, record_curr)
+            elif record_type == "Expense" and record_cat == "Cost of goods":
+                self.db.delete_cost_of_goods_chain(record_id, record_store, record_date, record_amount, record_curr) 
             else:
                 self.db.delete_transaction(record_id)
 
@@ -402,6 +450,12 @@ class StoreApp:
 
             self.db.add_transactions(store, today, t_type, cat, val, cur, paym)
 
+            if cat == "Cost of goods" and t_type == "Expense":
+                self.db.add_transactions("Cost of goods", today, "Income", f"from {store}", val, cur, paym)
+                amt_freight = round(val * 0.33, 2)
+                self.db.add_transactions(store, today, "Expense", "Freight", amt_freight, cur, paym)
+                self.db.add_transactions("Freight", today, "Income", f"from {store}", amt_freight, cur, paym)
+
             if t_type == "Income":
                 amount_main = round(val * 0.15, 2)
                 self.db.add_transactions(store, today, "Expense", "Main (15%)", amount_main, cur, paym)
@@ -419,8 +473,7 @@ class StoreApp:
             messagebox.showinfo("Succes", "Transaction Saved!")
 
             self.amount_entry.delete(0, tk.END)
-            self.date_entry.delete(0, tk.END)
-            self.date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
+            self.date_entry.set_date(datetime.now())
 
             self.type_combo.current(0)
             self.toggle_category_state()
