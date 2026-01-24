@@ -87,6 +87,59 @@ class DatabaseManager:
     def delete_transaction(self, trans_id):
         self.c.execute("DELETE FROM transactions WHERE id = ?", (trans_id,))
         self.conn.commit()
+
+    def delete_smart_chain(self, main_id, store_name, t_date, amount, p_method):
+        self.delete_transaction(main_id)
+
+        self.c.execute("SELECT id FROM stores WHERE name = ?", (store_name,))
+        src_res = self.c.fetchone()
+        if not src_res:
+            print("Error : Source store not found for deletion")
+            return
+        src_id = src_res[0]
+
+        val = float(amount)
+        amt_main = round(val * 0.15,2)
+        amt_tva = round(val * 0.07,2)
+
+        desc_main_out = "Main (15%)"
+        desc_main_in  = f"from {store_name}"
+        
+        desc_tva_out  = "TVA (7%)"
+        desc_tva_in   = f"from {store_name}"
+        
+        self.c.execute("DELETE FROM transactions WHERE date=? AND category=? AND amount=?", 
+                       (t_date, desc_main_out, amt_main))
+        
+        self.c.execute("SELECT id FROM stores WHERE name='Main Vault'")
+        vault_id = self.c.fetchone()[0]
+        self.c.execute("DELETE FROM transactions WHERE store_id=? AND date=? AND category=? AND amount=?", 
+                       (vault_id, t_date, desc_main_in, amt_main))
+
+        self.c.execute("DELETE FROM transactions WHERE date=? AND category=? AND amount=?", 
+                       (t_date, desc_tva_out, amt_tva))
+        
+        self.c.execute("SELECT id FROM stores WHERE name='TVA Account'")
+        tva_id = self.c.fetchone()[0]
+        self.c.execute("DELETE FROM transactions WHERE store_id=? AND date=? AND category=? AND amount=?", 
+                       (tva_id, t_date, desc_tva_in, amt_tva))
+
+        if p_method == "Card":
+            amt_comm = round(val * 0.03, 2)
+            desc_comm_out = "Card Commission (3%)"
+            desc_comm_in  = f"from {store_name}"
+            
+            self.c.execute("DELETE FROM transactions WHERE date=? AND category=? AND amount=?", 
+                           (t_date, desc_comm_out, amt_comm))
+            
+            self.c.execute("SELECT id FROM stores WHERE name='Bank Commission'") # Check spelling in your DB
+            bank_id = self.c.fetchone()[0]
+            self.c.execute("DELETE FROM transactions WHERE store_id=? AND date=? AND category=? AND amount=?", 
+                           (bank_id, t_date, desc_comm_in, amt_comm))
+
+        self.conn.commit()
+        print("Cascading delete complete.")
+
         
 #This class will be used for the user interface (GUI)
 class StoreApp:
@@ -115,7 +168,6 @@ class StoreApp:
         self.setup_styles()
 
         self.category_list = [
-            "Credit Card Commission",
             "Salaries",
             "Rent",
             "Yearly Fees",
@@ -128,8 +180,8 @@ class StoreApp:
         self.setup_header()
         self.setup_inputs()
         self.setup_table()
-
         self.view_records()
+        self.toggle_category_state()
 
     def setup_header(self):
         #the frame for the header
@@ -172,6 +224,8 @@ class StoreApp:
         self.type_combo.current(0)
         self.type_combo.grid(row=0, column=3, padx=5, pady=5)
 
+        self.type_combo.bind("<<ComboboxSelected>>", self.toggle_category_state)
+
         tk.Label(input_frame, text="Category", bg=self.colors["bg"]).grid(row=0, column=4, padx=5, pady=5, sticky="w")
         self.cat_var = tk.StringVar()
         self.cat_combo = ttk.Combobox(input_frame, textvariable=self.cat_var, values=self.category_list, state = "readonly", width=15)
@@ -181,6 +235,8 @@ class StoreApp:
         tk.Label(input_frame, text="Amount ($)", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.amount_entry = tk.Entry(input_frame, width=15)
         self.amount_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        self.amount_entry.bind('<Return>', lambda event: self.add_records())
 
         tk.Label(input_frame, text="Currency", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5, sticky="w")
         self.currency_var = tk.StringVar()
@@ -208,7 +264,7 @@ class StoreApp:
         self.filter_type.grid(row=0, column=1, padx=5)
 
         tk.Label(filter_frame, text="Filter Category:", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=10)
-        full_cat_list = ["All"] + self.category_list
+        full_cat_list = ["All", "Cash Flow"] + self.category_list
         self.filter_cat_var = tk.StringVar()
         self.filter_cat = ttk.Combobox(filter_frame, textvariable="self.filter_cat_var", values= full_cat_list, state="readonly", width=15)
         self.filter_cat.current(0)
@@ -261,6 +317,8 @@ class StoreApp:
         
         self.tree.pack(fill="both", expand=True)
 
+        self.tree.bind('<Delete>', lambda event: self.delete_record())
+
         bottom_frame = tk.Frame(main_content, bg=self.colors["bg"])
         bottom_frame.pack(fill="x", pady=10)
 
@@ -273,6 +331,19 @@ class StoreApp:
         #He placeholder ma bt bayyin b bayyin mahala l hateto b show records and __init__ he bas just to be safe
         self.status_label = tk.Label(bottom_frame, text="Loading...", font=("Sego UI", 10, "bold"), bg=self.colors["bg"], justify=tk.RIGHT)
         self.status_label.pack(side=tk.RIGHT)
+
+    def toggle_category_state(self, event=None):
+        current_type = self.type_combo.get()
+
+        if current_type == "Income":
+            self.cat_combo.set("Cash Flow")
+            self.cat_combo.config(state="disabled")
+        else:
+            self.cat_combo.config(state="readonly")
+            self.cat_combo['values'] = self.category_list
+
+            if self.category_list:
+                self.cat_combo.current(0)
 
     def reset_filters(self):
         self.filter_cat.current(0)
@@ -290,13 +361,22 @@ class StoreApp:
         
         confirm = messagebox.askyesno("Confirm", "Are you sure you want to delete this entry ?")
         if confirm:
-            row_data = self.tree.item(selected_item)
-            record_id = row_data['values'][0]
+            row_data = self.tree.item(selected_item)['values']
+            
+            record_id = row_data[0]
+            record_date = row_data[1]
+            record_type = row_data[2]
+            record_store = self.store_combo.get()
+            record_amount = row_data[4]
+            record_paym = row_data[6]
 
-            self.db.delete_transaction(record_id)
+            if record_type == "Income":
+                self.db.delete_smart_chain(record_id, record_store, record_date, record_amount, record_paym)
+            else:
+                self.db.delete_transaction(record_id)
 
             self.view_records()
-            messagebox.showinfo("Succes", "Record Deleted")
+            messagebox.showinfo("Succes", "Record and linked taxes deleted")
 
     def add_records(self):
         store = self.store_combo.get()
@@ -338,11 +418,12 @@ class StoreApp:
 
             messagebox.showinfo("Succes", "Transaction Saved!")
 
-            self.cat_combo.set('')
             self.amount_entry.delete(0, tk.END)
-
             self.date_entry.delete(0, tk.END)
             self.date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
+
+            self.type_combo.current(0)
+            self.toggle_category_state()
 
             self.view_records()
         except ValueError:
@@ -477,4 +558,5 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = StoreApp(root)
     root.mainloop()
+    
 
