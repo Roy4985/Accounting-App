@@ -41,14 +41,15 @@ class DatabaseManager:
 
     #This will check if the stores table is empty, if it is, it will add the default stores (he bas ta nzid l branches)
     def seed_data(self):
-        self.c.execute("SELECT count(*) FROM stores")
-        count = self.c.fetchone()[0]
-
-        if count == 0 :
-            default_branches = ["LeMall Dbayye", "City Center", "City Mall", "Koura Branch"]
-            for x in default_branches:
-                self.c.execute("INSERT INTO stores (name) VALUES (?)", (x,))
-                self.conn.commit()
+        default_branches = ["LeMall Dbayye", "City Center", "City Mall", "Koura Branch",
+                                "Main Vault", "TVA Account", "Bank Commission"]
+        
+        for branch in default_branches:
+            self.c.execute("SELECT count(*) FROM stores WHERE name = ?", (branch,))
+            if self.c.fetchone()[0] == 0:
+                print(f"Adding missing branch: {branch}")
+                self.c.execute("INSERT INTO stores (name) VALUES (?)", (branch,))
+        self.conn.commit()
 
 
     def get_store_names(self):
@@ -139,11 +140,12 @@ class StoreApp:
         title_label = tk.Label(header_frame, text="Select Branch", bg=self.colors["header"], font=("Sego UI", 18, "bold"), fg="white")
         title_label.pack(side=tk.LEFT, padx=20, pady=10)
 
+        all_stores = self.db.get_store_names()
+
         #Now under it we want to branch dropdown menu
         self.store_var = tk.StringVar()
-        self.store_combo = ttk.Combobox(header_frame, textvariable=self.store_var, state="readonly")
+        self.store_combo = ttk.Combobox(header_frame, textvariable=self.store_var, values=all_stores, state="readonly")
 
-        self.store_combo['values'] = self.db.get_store_names()
         self.store_combo.current(0)
         self.store_combo.pack(side=tk.RIGHT, padx=20, pady=10)
 
@@ -319,6 +321,20 @@ class StoreApp:
             today = date_val
 
             self.db.add_transactions(store, today, t_type, cat, val, cur, paym)
+
+            if t_type == "Income":
+                amount_main = round(val * 0.15, 2)
+                self.db.add_transactions(store, today, "Expense", "Main (15%)", amount_main, cur, paym)
+                self.db.add_transactions("Main Vault", today, "Income", f"from {store}", amount_main, cur, paym)
+
+                amount_tva = round(val * 0.07, 2)
+                self.db.add_transactions(store, today, "Expense", "TVA (7%)", amount_tva, cur, paym)
+                self.db.add_transactions("TVA Account", today, "Income", f"from {store}", amount_tva, cur, paym)
+
+                if paym == "Card":
+                    amount_card = round(val * 0.03, 2)
+                    self.db.add_transactions(store, today, "Expense", "Card Commission (3%)", amount_card, cur, paym)
+                    self.db.add_transactions("Bank Commission", today, "Income", f"from {store}", amount_card, cur, paym)
 
             messagebox.showinfo("Succes", "Transaction Saved!")
 
