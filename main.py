@@ -353,7 +353,7 @@ class StoreApp:
     def open_settings_window(self):
         top = tk.Toplevel(self.root)
         top.title("Configure Rates")
-        top.geometry("300x250")
+        top.geometry("300x350")
 
         top.configure(bg=self.colors["bg"])
 
@@ -419,6 +419,7 @@ class StoreApp:
                 self.cat_combo.delete(0, "end")
 
             elif current_store == "Main Vault":
+                self.cat_combo.config(state="readonly")
                 self.cat_combo['values'] = self.main_category_list
                 self.cat_combo.current(0)
 
