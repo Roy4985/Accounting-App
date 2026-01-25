@@ -44,6 +44,9 @@ class DatabaseManager:
                        )
         """)
 
+        self.c.execute("CREATE INDEX IF NOT EXISTS idx_store_date ON transactions(store_id, date)")
+        
+        self.c.execute("CREATE INDEX IF NOT EXISTS idx_parent ON transactions(parent_id)")
 
         self.seed_data()
         self.seed_settings()
@@ -131,6 +134,11 @@ class StoreApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Management System")
+        try:
+            self.root.iconbitmap("dollar.ico")
+        except:
+            pass
+
         self.root.state("zoomed")
         self.root.geometry("900x600")
 
@@ -161,6 +169,21 @@ class StoreApp:
             "Cost of goods",  
         ]
 
+        self.main_category_list = [
+            "Upgrades",
+            "Salaries",
+            "Bank Fees",
+            "Audit",
+            "Bags & EAS",
+            "Social Media",
+            "Electricity & Phone",
+            "Yearly Fees",
+            "Rent",
+            "Transportation",
+            "Various",
+        ]
+
+        self.current_data = []
 
         self.setup_header()
         self.setup_inputs()
@@ -174,11 +197,11 @@ class StoreApp:
         header_frame.pack(fill="x")
 
         #Now the Title on top of the page
-        title_label = tk.Label(header_frame, text="Select Branch", bg=self.colors["header"], font=("Sego UI", 18, "bold"), fg="white")
+        title_label = tk.Label(header_frame, text="Select Branch", bg=self.colors["header"], font=("Segoe UI", 18, "bold"), fg="white")
         title_label.pack(side=tk.LEFT, padx=20, pady=10)
 
         settings_btn = tk.Button(header_frame, text="⚙ Settings", bg=self.colors["accent"], fg="white", 
-                                 font=("Sego UI", 10, "bold"), relief="raised", bd=1, activebackground="#3498db", cursor="hand2",
+                                 font=("Segoe UI", 10, "bold"), relief="raised", bd=1, activebackground="#3498db", cursor="hand2",
                                  command=self.open_settings_window)
         settings_btn.pack(side=tk.RIGHT, padx=20, pady=10)
 
@@ -191,7 +214,11 @@ class StoreApp:
         self.store_combo.current(0)
         self.store_combo.pack(side=tk.RIGHT, padx=20, pady=10)
 
-        self.store_combo.bind("<<ComboboxSelected>>", lambda e: self.view_records())
+        def on_branch_change(event):
+            self.toggle_category_state()
+            self.update_filter_dropdown()
+
+        self.store_combo.bind("<<ComboboxSelected>>", on_branch_change)
 
     def setup_inputs(self):
         master_frame = tk.Frame(self.root, bg=self.colors["bg"])
@@ -202,7 +229,7 @@ class StoreApp:
         input_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=(0,10))
 
         tk.Label(input_frame, text="Date", bg=self.colors["bg"]).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.date_entry = DateEntry(input_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        self.date_entry = DateEntry(input_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
         self.date_entry.grid(row=0, column=1, padx=5, pady=5)
 
         tk.Label(input_frame, text="Type", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=5, sticky="w")
@@ -237,7 +264,7 @@ class StoreApp:
         self.paym_combo.current(0)
         self.paym_combo.grid(row=1, column=5, padx=5, pady=5) 
 
-        add_btn = tk.Button(input_frame, text="+ Add Record", bg=self.colors["success"], fg="white", font=("Sego UI", 10, "bold") ,command=self.add_records)
+        add_btn = tk.Button(input_frame, text="+ Add Record", bg=self.colors["success"], fg="white", font=("Segoe UI", 10, "bold") ,command=self.add_records)
         add_btn.grid(row=2, column=0, columnspan=6, stick="ew", padx=10, pady=10)
 
         #filter side
@@ -249,6 +276,7 @@ class StoreApp:
         self.filter_type = ttk.Combobox(filter_frame, textvariable="self.filter_type_var", values=["All", "Income", "Expense"], state="readonly", width=10)
         self.filter_type.current(0)
         self.filter_type.grid(row=0, column=1, padx=5)
+        self.filter_type.bind("<<ComboboxSelected>>", self.update_filter_dropdown)
 
         tk.Label(filter_frame, text="Filter Category:", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=10)
         full_cat_list = ["All", "Cash Flow"] + self.category_list
@@ -258,12 +286,12 @@ class StoreApp:
         self.filter_cat.grid(row=0, column=3, padx=5)
 
         tk.Label(filter_frame, text="From:", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5)
-        self.date_from = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        self.date_from = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
         self.date_from.delete(0, "end")
         self.date_from.grid(row=1, column=1, padx=5)
 
         tk.Label(filter_frame, text="To:", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5)
-        self.date_to = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        self.date_to = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
         self.date_to.delete(0, "end")
         self.date_to.grid(row=1, column=3, padx=5)
 
@@ -273,7 +301,6 @@ class StoreApp:
         tk.Button(btn_frame, text="Apply Filter", bg="#2c3e50", fg="white", command=self.view_records).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="Reset", command = self.reset_filters).pack(side=tk.LEFT, padx=5)
 
-        self.filter_type.bind("<<ComboboxSelected>>", lambda e: self.view_records())
         self.filter_cat.bind("<<ComboboxSelected>>", lambda e: self.view_records())
 
 
@@ -320,7 +347,7 @@ class StoreApp:
         export_btn.pack(side=tk.LEFT, padx=5)
 
         #He placeholder ma bt bayyin b bayyin mahala l hateto b show records and __init__ he bas just to be safe
-        self.status_label = tk.Label(bottom_frame, text="Loading...", font=("Sego UI", 10, "bold"), bg=self.colors["bg"], justify=tk.RIGHT)
+        self.status_label = tk.Label(bottom_frame, text="Loading...", font=("Segoe UI", 12, "bold"), bg=self.colors["bg"], justify=tk.RIGHT)
         self.status_label.pack(side=tk.RIGHT)
 
     def open_settings_window(self):
@@ -330,7 +357,7 @@ class StoreApp:
 
         top.configure(bg=self.colors["bg"])
 
-        tk.Label(top, text="Update Tax Rates", font=("Sego UI", 14, "bold"), 
+        tk.Label(top, text="Update Tax Rates", font=("Segoe UI", 14, "bold"), 
                  bg=self.colors["bg"], fg=self.colors["header"]).pack(pady=15)
         
         form_frame = tk.Frame(top, bg=self.colors["bg"])
@@ -338,11 +365,11 @@ class StoreApp:
 
         def make_row(row, label_text, key):
             
-            tk.Label(form_frame, text=label_text, font=("Sego UI", 10), 
+            tk.Label(form_frame, text=label_text, font=("Segoe UI", 10), 
                      bg=self.colors["bg"], fg="#2c3e50", anchor="w").grid(row=row, column=0, padx=15, pady=8, sticky="w")
             
             
-            entry = tk.Entry(form_frame, width=10, font=("Sego UI", 10), justify="center", bd=1, relief="solid")
+            entry = tk.Entry(form_frame, width=10, font=("Segoe UI", 10), justify="center", bd=1, relief="solid")
             
             
             entry.grid(row=row, column=1, padx=15, pady=8)
@@ -371,21 +398,33 @@ class StoreApp:
 
         
         save_btn = tk.Button(top, text="Save Changes", command=save, 
-                             bg=self.colors["success"], fg="white", font=("Sego UI", 11, "bold"), 
+                             bg=self.colors["success"], fg="white", font=("Segoe UI", 11, "bold"), 
                              width=20, relief="flat", cursor="hand2")
         save_btn.pack(pady=20)
 
     def toggle_category_state(self, event=None):
         current_type = self.type_combo.get()
+        current_store = self.store_combo.get()
+
+        system_accounts = ["TVA Account", "Bank Commission", "Cost of goods", "Freight"]
+
 
         if current_type == "Income":
             self.cat_combo.set("Cash Flow")
             self.cat_combo.config(state="disabled")
         else:
-            self.cat_combo.config(state="readonly")
-            self.cat_combo['values'] = self.category_list
+            if current_store in system_accounts:
+                self.cat_combo.config(state="normal")
+                self.cat_combo['values'] = []
+                self.cat_combo.delete(0, "end")
 
-            if self.category_list:
+            elif current_store == "Main Vault":
+                self.cat_combo['values'] = self.main_category_list
+                self.cat_combo.current(0)
+
+            else:
+                self.cat_combo.config(state="readonly")
+                self.cat_combo['values'] = self.category_list
                 self.cat_combo.current(0)
 
     def reset_filters(self):
@@ -448,16 +487,16 @@ class StoreApp:
                 card_rate = self.db.get_rate("comm_rate")
 
                 amount_main = round(val * (main_rate / 100), 2)
-                self.db.add_transactions(store, today, "Expense", "Main (15%)", amount_main, cur, paym, parent_id = main_id)
+                self.db.add_transactions(store, today, "Expense", f"Main ({main_rate:g}%)", amount_main, cur, paym, parent_id = main_id)
                 self.db.add_transactions("Main Vault", today, "Income", f"from {store}", amount_main, cur, paym, parent_id = main_id)
 
                 amount_tva = round(val * (tva_rate / 100), 2)
-                self.db.add_transactions(store, today, "Expense", "TVA (7%)", amount_tva, cur, paym, parent_id = main_id)
+                self.db.add_transactions(store, today, "Expense", f"TVA ({tva_rate:g}%)", amount_tva, cur, paym, parent_id = main_id)
                 self.db.add_transactions("TVA Account", today, "Income", f"from {store}", amount_tva, cur, paym, parent_id = main_id)
 
                 if paym == "Card":
                     amount_card = round(val * (card_rate / 100), 2)
-                    self.db.add_transactions(store, today, "Expense", "Card Commission (3%)", amount_card, cur, paym, parent_id = main_id)
+                    self.db.add_transactions(store, today, "Expense", f"Card Commission ({card_rate:g}%)", amount_card, cur, paym, parent_id = main_id)
                     self.db.add_transactions("Bank Commission", today, "Income", f"from {store}", amount_card, cur, paym, parent_id = main_id)
 
             messagebox.showinfo("Succes", "Transaction Saved!")
@@ -482,6 +521,8 @@ class StoreApp:
 
         f_type = self.filter_type.get()
         f_cat = self.filter_cat.get()
+        start_date = self.date_from.get()
+        end_date = self.date_to.get()
 
         start_date = self.date_from.get()
         end_date = self.date_to.get()
@@ -496,6 +537,7 @@ class StoreApp:
 
         count = 0
 
+        self.current_data = []
 
         for row in rows:
             t_type = row[2]
@@ -505,14 +547,21 @@ class StoreApp:
             if f_type != "All" and t_type != f_type:
                 continue
 
-            if f_cat != "All" and categ != f_cat:
-                continue
-
             if start_date and date < start_date:
                 continue
 
             if end_date and date > end_date:
                 continue
+
+            if f_cat != "All":
+                if store_name == "Main Vault" and f_type == "Income":
+                    target_match = f"from {f_cat}"
+                    if categ != target_match:
+                        continue
+                else:
+                    if categ != f_cat : continue
+
+            self.current_data.append(row)
 
             if count % 2 == 0:
                 self.tree.insert("", "end", values=row, tags=("evenrow",))
@@ -521,32 +570,82 @@ class StoreApp:
             
             count += 1
 
-            
-            amount = float(row[4])
-            curr = row[5]
-            paym = row[6]
+            try:
+                amount = float(row[4])
+                curr = row[5]
+                paym = row[6]
 
-            
-
-            if curr == "USD ($)":
-                if paym == "Cash":
-                    if t_type == "Income" : total_usd_cash += amount
-                    else : total_usd_cash -= amount
-                elif paym == "Card":
-                    if t_type == "Income" : total_usd_card += amount
-                    else : total_usd_card -= amount
-            elif curr == "Lira (LBP)":
-                if paym == "Cash":
-                    if t_type == "Income" : total_lbp_cash += amount
-                    else : total_lbp_cash -= amount
-                elif paym == "Card":
-                    if t_type == "Income" : total_lbp_card += amount
-                    else : total_lbp_card -= amount
+                if curr == "USD ($)":
+                    if paym == "Cash":
+                        if t_type == "Income" : total_usd_cash += amount
+                        else : total_usd_cash -= amount
+                    elif paym == "Card":
+                        if t_type == "Income" : total_usd_card += amount
+                        else : total_usd_card -= amount
+                elif curr == "Lira (LBP)":
+                    if paym == "Cash":
+                        if t_type == "Income" : total_lbp_cash += amount
+                        else : total_lbp_cash -= amount
+                    elif paym == "Card":
+                        if t_type == "Income" : total_lbp_card += amount
+                        else : total_lbp_card -= amount
+            except ValueError:
+                pass
 
 
         report = f"USD Cash: ${total_usd_cash:,.2f} | USD Card ${total_usd_card:,.2f}\n LBP Cash: {total_lbp_cash:,.0f} L.L | LBP Card: {total_lbp_card:,.0f} L.L"
-        self.status_label.config(text=report, font=("Arial", 10, "bold"), justify=tk.LEFT)
+        self.status_label.config(text=report, font=("Consolas", 12, "bold"), justify=tk.LEFT)
+
         
+    def update_filter_dropdown(self, event=None):
+        current_store = self.store_combo.get()
+        f_type = self.filter_type.get()
+
+        new_values = ["All"]
+
+        system_accounts = ["TVA Account", "Bank Commission", "Cost of goods", "Freight"]
+
+        exclude_list = ["Main Vault"] + system_accounts
+
+        if current_store == "Main Vault" or current_store in system_accounts:
+            if f_type == "Income":
+                self.filter_cat.config(state="readonly")
+                all_branches = self.db.get_store_names()
+                real_branches = [s for s in all_branches if s not in exclude_list]
+                new_values += real_branches
+
+            elif f_type == "Expense":
+                if current_store == "Main Vault":
+                    self.filter_cat.config(state="readonly")
+                    new_values += self.main_category_list
+                else:
+                    self.filter_cat.config(state="normal")
+                    self.filter_cat.delete(0, "end")
+
+            else :
+                self.filter_cat.config(state="readonly")
+                all_branches = self.db.get_store_names()
+                real_branches = [s for s in all_branches if s not in exclude_list]
+                if current_store == "Main Vault":
+                    new_values += self.main_category_list + real_branches
+                else:
+                    new_values += real_branches
+        
+
+        else :
+            self.filter_cat.config(state="readonly")
+            if f_type == "Income":
+                new_values += ["Cash Flow"]
+            elif f_type == "Expense":
+                new_values += self.category_list
+            else:
+                new_values += self.category_list + ["Cash Flow"]
+
+        self.filter_cat['values'] = new_values
+        self.filter_cat.current(0)
+
+        self.view_records()
+    
     def export_to_excel(self):
         filename = filedialog.asksaveasfilename(
             initialdir="/",
@@ -559,7 +658,11 @@ class StoreApp:
             return
         
         store_name = self.store_combo.get()
-        rows = self.db.get_transactions(store_name)
+        rows = self.current_data
+
+        if not rows:
+            messagebox.showwarning("Warning", "No data to export")
+            return
 
         try:
             with open(filename, mode='w', newline='', encoding='utf-8') as file:
@@ -584,17 +687,17 @@ class StoreApp:
                         foreground="black",
                         rowheight=30, 
                         fieldbackground="white",
-                        font=("Sego UI", 10))
+                        font=("Segoe UI", 10))
         
         
         style.configure("Treeview.Heading", 
-                        font=("Sego UI", 11, "bold"),
+                        font=("Segoe UI", 11, "bold"),
                         background="#dfe6e9",
                         foreground="#2d3436")
         
         
         style.configure("TLabelframe", background=self.colors["bg"])
-        style.configure("TLabelframe", font=("Sego UI", 10, "bold"), background=self.colors["bg"], foreground="#2c3e50")
+        style.configure("TLabelframe", font=("Segoe UI", 10, "bold"), background=self.colors["bg"], foreground="#2c3e50")
 
 
 if __name__ == "__main__":
