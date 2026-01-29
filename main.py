@@ -56,7 +56,8 @@ class DatabaseManager:
             "main_rate" : 15.0,
             "tva_rate" : 7.0,
             "comm_rate": 3.0,
-            "freight_rate": 33.0
+            "freight_rate": 33.0,
+            "exchange_rate": 89500.0,
         }
 
         for key, val in default.items():
@@ -166,7 +167,8 @@ class StoreApp:
             "Electricity Chiller",
             "Phone",
             "Various",
-            "Cost of goods",  
+            "Cost of goods",
+            "Cleaner",  
         ]
 
         self.main_category_list = [
@@ -264,8 +266,18 @@ class StoreApp:
         self.paym_combo.current(0)
         self.paym_combo.grid(row=1, column=5, padx=5, pady=5) 
 
-        add_btn = tk.Button(input_frame, text="+ Add Record", bg=self.colors["success"], fg="white", font=("Segoe UI", 10, "bold") ,command=self.add_records)
-        add_btn.grid(row=2, column=0, columnspan=6, stick="ew", padx=10, pady=10)
+        input_btn_frame = tk.Frame(input_frame, background=self.colors["bg"])
+        input_btn_frame.grid(row=2, column=0, columnspan=6, pady=15, sticky="ew")
+
+        # To give both buttons equal sapce
+        input_btn_frame.columnconfigure(0, weight=1)
+        input_btn_frame.columnconfigure(1, weight=1)
+
+        add_btn = tk.Button(input_btn_frame, text="+ Add Record", bg=self.colors["success"], fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", relief="flat",command=self.add_records)
+        add_btn.grid(row=0, column=0, sticky="ew", padx=(10, 5), ipady=5)
+
+        exchange_btn = tk.Button(input_btn_frame, text="Exchange", font=("Segoe UI", 10, "bold"), bg="#e67e22", fg="white", cursor="hand2", relief="flat",command=self.open_exchange_window)
+        exchange_btn.grid(row=0, column=1, sticky="ew", padx=(5, 10), ipady=5)
 
         #filter side
         filter_frame = ttk.LabelFrame(master_frame, text="Filters")
@@ -309,11 +321,11 @@ class StoreApp:
         self.date_to.delete(0, "end")
         self.date_to.grid(row=2, column=3, padx=5)
 
-        btn_frame = tk.Frame(filter_frame, )
-        btn_frame.grid(row=3, column=0, columnspan=4, pady=10)
+        filter_btn_frame = tk.Frame(filter_frame, )
+        filter_btn_frame.grid(row=3, column=0, columnspan=4, pady=10)
 
-        tk.Button(btn_frame, text="Apply Filter", bg="#2c3e50", fg="white", command=self.view_records).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Reset", command = self.reset_filters).pack(side=tk.LEFT, padx=5)
+        tk.Button(filter_btn_frame, text="Apply Filter", bg="#2c3e50", fg="white", command=self.view_records).pack(side=tk.LEFT, padx=5)
+        tk.Button(filter_btn_frame, text="Reset", command = self.reset_filters).pack(side=tk.LEFT, padx=5)
 
         self.filter_cat.bind("<<ComboboxSelected>>", lambda e: self.view_records())
 
@@ -397,6 +409,7 @@ class StoreApp:
         e_tva  = make_row(1, "TVA Tax (%):", "tva_rate")
         e_comm = make_row(2, "Card Comm (%):", "comm_rate")
         e_frgt = make_row(3, "Freight (%):", "freight_rate")
+        e_exr = make_row(4, "Exchange Rate:", "exchange_rate")
 
         def save():
             try:
@@ -404,6 +417,7 @@ class StoreApp:
                 self.db.update_rate("tva_rate", float(e_tva.get()))
                 self.db.update_rate("comm_rate", float(e_comm.get()))
                 self.db.update_rate("freight_rate", float(e_frgt.get()))
+                self.db.update_rate("exchange_rate", float(e_exr.get()))
                 
                 messagebox.showinfo("Success", "Rates updated!", parent=top) 
                 top.destroy()
@@ -415,6 +429,131 @@ class StoreApp:
                              bg=self.colors["success"], fg="white", font=("Segoe UI", 11, "bold"), 
                              width=20, relief="flat", cursor="hand2")
         save_btn.pack(pady=20)
+
+    def open_exchange_window(self):
+        top = tk.Toplevel(self.root)
+        top.title("Exchange currency")
+        top.geometry("380x500")
+        top.configure(bg=self.colors["bg"])
+        top.resizable(False, False)
+
+        header_frame = tk.Frame(top, bg=self.colors["header"], height=60)
+        header_frame.pack(fill="x")
+
+        tk.Label(header_frame, text="Currency Exchange", font=("Segoe UI", 16, "bold"), 
+                 bg=self.colors["header"], fg="white").pack(pady=15)
+
+        page_frame = tk.Frame(top, bg=self.colors["bg"])
+        page_frame.pack(fill="both", expand=False, padx=30, pady=20)
+
+        tk.Label(page_frame, text="Amount to Change:", font=("Segoe UI", 12), bg=self.colors["bg"]).pack(anchor="w", pady=(0,5))
+        amt_entry = tk.Entry(page_frame, width=20, font=("Segoe UI", 12), bd=2, relief="flat")
+        amt_entry.pack(fill="x", ipady=5)
+
+        tk.Label(page_frame, text="Direction:", font=("Segoe UI", 10), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
+        directions = ["USD -> LBP", "LBP -> USD"]
+        dir_combo_var = tk.StringVar()
+        dir_combo = ttk.Combobox(page_frame, textvariable=dir_combo_var, values=directions, state="readonly", font=("Segoe UI", 11))
+        dir_combo.current(0)
+        dir_combo.pack(fill="x", ipady=4)
+
+        tk.Label(page_frame, text="Exchange Rate:", font=("Segoe UI", 10), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
+        rate_entry = tk.Entry(page_frame , font=("Segoe UI", 12), width=20, bd=2, relief="flat")
+        rate_entry.insert(0, self.db.get_rate("exchange_rate"))
+        rate_entry.pack(fill="x", ipady=5)
+
+        result_frame = tk.Frame(page_frame, bg="#dfe6e9", bd=1, relief="solid")
+        result_frame.pack(fill="x", pady=25)
+
+        result_text = tk.StringVar()
+        result_text.set("---")
+
+        result_label = tk.Label(result_frame, textvariable=result_text, font=("Consolas", 14, "bold"), bg="#dfe6e9", fg="#2d3436")
+        result_label.pack(pady=10)
+
+        def update_preview(event=None):
+            try:
+                amt_str = amt_entry.get()
+                rate_str = rate_entry.get()
+
+                if not amt_str or not rate_str:
+                    result_text.set("Result: ...")
+                    return
+                
+                amount = float(amt_str)
+                rate=float(rate_str)
+                direction = dir_combo.get()
+
+                if direction == "USD -> LBP":
+                    res = amount * rate
+                    result_text.set(f"Will receive: {res:,.0f} L.L")
+                else:
+                    res = amount / rate
+                    result_text.set(f"Will Receive: {res:,.2f}")
+
+            except ValueError:
+                result_text.set("Result: ...")
+
+        def execute_exchange():
+            try:
+                amount = float(amt_entry.get())
+                rate = float(rate_entry.get())
+                direction = dir_combo.get()
+                store = self.store_combo.get()
+                today = datetime.now().strftime("%Y-%m-%d")
+
+                if direction == "USD -> LBP":
+                    converted_amt = amount * rate
+
+                    currency_out = "USD ($)"
+                    currency_in = "Lira (LBP)"
+
+                    result_text.set(f"{converted_amt:,.0f} L.L")
+                
+                else:
+                    converted_amt = amount / rate
+
+                    currency_in = "USD ($)"
+                    currency_out = "Lira (LBP)"
+
+                    result_text.set(f"${converted_amt:,.2f}")
+                
+                parent_id = self.db.add_transactions(
+                    store,
+                    today,
+                    "Expense",
+                    "Exchange Out",
+                    amount,
+                    currency_out,
+                    "Cash",
+                    parent_id = None
+                )
+
+                self.db.add_transactions(
+                    store,
+                    today,
+                    "Income",
+                    "Exchange In",
+                    converted_amt,
+                    currency_in,
+                    "Cash",
+                    parent_id=parent_id
+                )
+
+                messagebox.showinfo("Success", "Exchange Recorded!", parent=top)
+                top.destroy()
+                self.view_records()
+            
+            except ValueError:
+                messagebox.showerror("Error", "Please enter valid numbers", parent=top)
+
+
+        amt_entry.bind("<KeyRelease>", update_preview)
+        rate_entry.bind("<KeyRelease>", update_preview)
+        dir_combo.bind("<<ComboboxSelected>>", update_preview)
+
+        exchange_btn = tk.Button(top, text="CONFIRM EXCHANGE", command=execute_exchange, bg=self.colors["accent"], fg="white", font=("Segoe UI", 12, "bold"), relief="flat", cursor="hand2")
+        exchange_btn.pack(side=tk.BOTTOM, fill="x", pady=20, padx=20, ipady=10)
 
     def toggle_category_state(self, event=None):
         current_type = self.type_combo.get()
