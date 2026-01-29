@@ -285,18 +285,32 @@ class StoreApp:
         self.filter_cat.current(0)
         self.filter_cat.grid(row=0, column=3, padx=5)
 
-        tk.Label(filter_frame, text="From:", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5)
+        tk.Label(filter_frame, text="Currency:", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5)
+        self.filter_curr_var = tk.StringVar()
+        self.filter_curr = ttk.Combobox(filter_frame, textvariable="self.filter_curr_var", values= ["All", "USD ($)", "Lira (LBP)"], state="readonly", width=10)
+        self.filter_curr.current(0)
+        self.filter_curr.grid(row=1, column=1, padx=5)
+        self.filter_curr.bind("<<ComboboxSelected>>", lambda e: self.view_records())
+
+        tk.Label(filter_frame, text="Method:", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5)
+        self.filter_paym_var = tk.StringVar()
+        self.filter_paym = ttk.Combobox(filter_frame, textvariable="self.filter_paym_var", values= ["All", "Cash", "Card"], state="readonly", width=15)
+        self.filter_paym.current(0)
+        self.filter_paym.grid(row=1, column=3, padx=5)
+        self.filter_paym.bind("<<ComboboxSelected>>", lambda e: self.view_records())
+
+        tk.Label(filter_frame, text="From:", bg=self.colors["bg"]).grid(row=2, column=0, padx=5, pady=5)
         self.date_from = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
         self.date_from.delete(0, "end")
-        self.date_from.grid(row=1, column=1, padx=5)
+        self.date_from.grid(row=2, column=1, padx=5)
 
-        tk.Label(filter_frame, text="To:", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5)
+        tk.Label(filter_frame, text="To:", bg=self.colors["bg"]).grid(row=2, column=2, padx=5, pady=5)
         self.date_to = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
         self.date_to.delete(0, "end")
-        self.date_to.grid(row=1, column=3, padx=5)
+        self.date_to.grid(row=2, column=3, padx=5)
 
         btn_frame = tk.Frame(filter_frame, )
-        btn_frame.grid(row=2, column=0, columnspan=4, pady=5)
+        btn_frame.grid(row=3, column=0, columnspan=4, pady=10)
 
         tk.Button(btn_frame, text="Apply Filter", bg="#2c3e50", fg="white", command=self.view_records).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="Reset", command = self.reset_filters).pack(side=tk.LEFT, padx=5)
@@ -433,6 +447,8 @@ class StoreApp:
         self.filter_type.current(0)
         self.date_from.delete(0, tk.END)
         self.date_to.delete(0, tk.END)
+        self.filter_curr.current(0)
+        self.filter_paym.current(0)
         self.view_records()
 
     def delete_record(self):
@@ -511,7 +527,8 @@ class StoreApp:
             self.view_records()
         except ValueError:
             messagebox.showerror("Error", "Amount must be a number")
-
+    
+    #Important for tree display, and filters
     def view_records(self):
         store_name = self.store_combo.get()
 
@@ -522,6 +539,8 @@ class StoreApp:
 
         f_type = self.filter_type.get()
         f_cat = self.filter_cat.get()
+        f_curr = self.filter_curr.get()
+        f_paym = self.filter_paym.get()
         start_date = self.date_from.get()
         end_date = self.date_to.get()
 
@@ -544,6 +563,8 @@ class StoreApp:
             t_type = row[2]
             categ = row[3]
             date = row[1]
+            curr = row[5]
+            paym = row[6]
 
             if f_type != "All" and t_type != f_type:
                 continue
@@ -552,6 +573,12 @@ class StoreApp:
                 continue
 
             if end_date and date > end_date:
+                continue
+
+            if f_curr != "All" and curr != f_curr:
+                continue
+
+            if f_paym != "All" and paym != f_paym:
                 continue
 
             if f_cat != "All":
