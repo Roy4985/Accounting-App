@@ -119,6 +119,15 @@ class DatabaseManager:
 
         return self.c.fetchall()
     
+    def update_transaction(self, record_id, new_date, new_category):
+        self.c.execute("""
+            UPDATE transactions 
+            SET date = ?, category = ?
+            WHERE id = ?
+        """, (new_date, new_category, record_id))
+        
+        self.conn.commit()
+    
     def delete_transaction(self, trans_id):
         self.c.execute("DELETE FROM transactions WHERE id = ?", (trans_id,))
         self.conn.commit()
@@ -364,6 +373,7 @@ class StoreApp:
 
         self.tree.bind('<Delete>', lambda event: self.delete_record())
 
+
         bottom_frame = tk.Frame(main_content, bg=self.colors["bg"])
         bottom_frame.pack(fill="x", pady=10)
 
@@ -376,6 +386,65 @@ class StoreApp:
         #He placeholder ma bt bayyin b bayyin mahala l hateto b show records and __init__ he bas just to be safe
         self.status_label = tk.Label(bottom_frame, text="Loading...", font=("Segoe UI", 12, "bold"), bg=self.colors["bg"], justify=tk.RIGHT)
         self.status_label.pack(side=tk.RIGHT)
+
+        #Edit Part 
+        self.context_menu = tk.Menu(self.root, tearoff=0)
+        self.context_menu.add_command(label="Edit Record", command=self.open_edit_window)
+
+        self.tree.bind("<Button-3>", self.show_context_menu)
+
+    def show_context_menu(self, event):
+        item_id = self.tree.identify_row(event.y)
+
+        if item_id:
+            self.tree.selection_set(item_id)
+            self.context_menu.post(event.x_root, event.y_root)
+
+    def open_edit_window(self):
+        selected_item = self.tree.selection()
+
+        if not selected_item:
+            return
+        
+        row_data = self.tree.item(selected_item)['values']
+
+        record_id = row_data[0]
+        old_date = row_data[1]
+        old_cat = row_data[3]
+        old_amt = row_data[4]
+
+        edit_win = tk.Toplevel(self.root)
+        edit_win.title("Edit Record")
+        edit_win.geometry("300x400")
+
+        tk.Label(edit_win, text="Date:").pack(pady=5)
+        date_entry = DateEntry(edit_win, width=12, date_pattern='yyyy-mm-dd')
+        date_entry.set_date(old_date)
+        date_entry.pack()
+
+        tk.Label(edit_win, text="Category:").pack(pady=5)
+        cat_entry = ttk.Combobox(edit_win, values=self.category_list)
+        cat_entry.set(old_cat)
+        cat_entry.pack()
+
+        # -- Amount (Read Only for now!) --
+        tk.Label(edit_win, text="Amount (Cannot change math yet):").pack(pady=5)
+        amt_entry = tk.Entry(edit_win)
+        amt_entry.insert(0, str(old_amt))
+        amt_entry.config(state="disabled")
+        amt_entry.pack()
+
+        def save_changes():
+            new_date = date_entry.get()
+            new_cat = cat_entry.get()
+
+            self.db.update_transaction(record_id, new_date, new_cat)
+
+            messagebox.showinfo("Success", "Record Updated!")
+            edit_win.destroy()
+            self.view_records()
+
+        tk.Button(edit_win, text="Save Changes", command=save_changes, bg=self.colors["success"], fg="white").pack(pady=20)
 
     def open_settings_window(self):
         top = tk.Toplevel(self.root)
