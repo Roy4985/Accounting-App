@@ -119,15 +119,34 @@ class DatabaseManager:
 
         return self.c.fetchall()
     
-    def update_transaction(self, record_id, new_date, new_category):
+    def update_transaction_full(self, record_id, new_date, new_cat, new_amt):
+        self.c.execute("""
+                       UPDATE transactions
+                       SET date = ?, category = ?, amount = ?
+                       WHERE id = ?
+                       """, (new_date, new_cat, new_amt, record_id))
+        
+        self.c.execute("UPDATE transactions SET date = ? WHERE parent_id = ?",(new_date, record_id))
+
+        self.conn.commit()
+
+    def update_smart_pair(self, parent_id, dest_store_name, category_keyword, new_amount):
         self.c.execute("""
             UPDATE transactions 
-            SET date = ?, category = ?
-            WHERE id = ?
-        """, (new_date, new_category, record_id))
-        
+            SET amount = ? 
+            WHERE parent_id = ? 
+            AND store_id = (SELECT id FROM stores WHERE name = ?)
+        """, (new_amount, parent_id, dest_store_name))
+
+        like_query = f"{category_keyword}%"
+        self.c.execute("""
+                        UPDATE transactions
+                       SET amount = ?
+                       WHERE parent_id = ?
+                       AND category LIKE ?""", (new_amount, parent_id, like_query))
+
         self.conn.commit()
-    
+
     def delete_transaction(self, trans_id):
         self.c.execute("DELETE FROM transactions WHERE id = ?", (trans_id,))
         self.conn.commit()
@@ -407,11 +426,21 @@ class StoreApp:
             return
         
         row_data = self.tree.item(selected_item)['values']
+        clicked_id = row_data[0]
 
-        record_id = row_data[0]
-        old_date = row_data[1]
-        old_cat = row_data[3]
-        old_amt = row_data[4]
+        self.db.c.execute("SELECT parent_id FROM transactions WHERE id = ?", (clicked_id,))
+        result = self.db.c.fetchone()
+
+        final_id = result[0] if result and result[0] else clicked_id
+
+        self.db.c.execute("SELECT * FROM transactions WHERE id = ?", (final_id,))
+        record = self.db.c.fetchone()
+
+        old_date = record[3]
+        old_cat = record[5]
+        old_amt = record[6]
+        old_type = record[4]
+        old_paym = record[8]
 
         edit_win = tk.Toplevel(self.root)
         edit_win.title("Edit Record")
@@ -427,22 +456,40 @@ class StoreApp:
         cat_entry.set(old_cat)
         cat_entry.pack()
 
-        # -- Amount (Read Only for now!) --
         tk.Label(edit_win, text="Amount (Cannot change math yet):").pack(pady=5)
         amt_entry = tk.Entry(edit_win)
         amt_entry.insert(0, str(old_amt))
-        amt_entry.config(state="disabled")
         amt_entry.pack()
 
         def save_changes():
-            new_date = date_entry.get()
-            new_cat = cat_entry.get()
+            try:
+                new_date = date_entry.get()
+                new_cat = cat_entry.get()
+                new_amt = float(amt_entry.get())
 
-            self.db.update_transaction(record_id, new_date, new_cat)
+                self.db.update_transaction_full(final_id, new_date, new_cat, new_amt)
 
-            messagebox.showinfo("Success", "Record Updated!")
-            edit_win.destroy()
-            self.view_records()
+                if old_type == "Income" and new_amt != old_amt:
+
+                    main_rate = self.db.get_rate("main_rate")
+                    tva_rate = self.db.get_rate("tva_rate")
+                    comm_rate = self.db.get_rate("comm_rate")
+
+                    val_main = round(new_amt * (main_rate / 100), 2)
+                    val_tva = round(new_amt * (tva_rate / 100), 2)
+
+                    self.db.update_smart_pair(final_id, "Main Vault", "Main", val_main)
+                    self.db.update_smart_pair(final_id, "TVA Account", "TVA", val_tva)
+
+                    if old_paym == "Card":
+                        val_comm = round(new_amt * (comm_rate / 100), 2)
+                        self.db.update_smart_pair(final_id, "Bank Commission", "Card Commission",val_comm)
+
+                messagebox.showinfo("Success", "Record Updated!")
+                edit_win.destroy()
+                self.view_records()
+            except ValueError:
+                messagebox.showerror("Error", "Amount must be a number")
 
         tk.Button(edit_win, text="Save Changes", command=save_changes, bg=self.colors["success"], fg="white").pack(pady=20)
 
