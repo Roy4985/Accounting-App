@@ -71,6 +71,7 @@ class DatabaseManager:
 
     def update_rate(self, key, value):
         self.c.execute("UPDATE settings SET value = ? WHERE key = ?", (value,key))
+        self.conn.commit()
 
     #This will check if the stores table is empty, if it is, it will add the default stores (he bas ta nzid l branches)
     def seed_data(self):
@@ -168,7 +169,7 @@ class StoreApp:
             "Phone",
             "Various",
             "Cost of goods",
-            "Cleaner",  
+            "Cleaner",
         ]
 
         self.main_category_list = [
@@ -291,7 +292,7 @@ class StoreApp:
         self.filter_type.bind("<<ComboboxSelected>>", self.update_filter_dropdown)
 
         tk.Label(filter_frame, text="Filter Category:", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=10)
-        full_cat_list = ["All", "Cash Flow"] + self.category_list
+        full_cat_list = ["All", "Cash Flow", "Exchange In/Out"] + self.category_list
         self.filter_cat_var = tk.StringVar()
         self.filter_cat = ttk.Combobox(filter_frame, textvariable="self.filter_cat_var", values= full_cat_list, state="readonly", width=15)
         self.filter_cat.current(0)
@@ -503,7 +504,7 @@ class StoreApp:
                 today = datetime.now().strftime("%Y-%m-%d")
 
                 if direction == "USD -> LBP":
-                    converted_amt = amount * rate
+                    converted_amt = round(amount * rate, 0)
 
                     currency_out = "USD ($)"
                     currency_in = "Lira (LBP)"
@@ -511,7 +512,7 @@ class StoreApp:
                     result_text.set(f"{converted_amt:,.0f} L.L")
                 
                 else:
-                    converted_amt = amount / rate
+                    converted_amt = round(amount / rate, 2)
 
                     currency_in = "USD ($)"
                     currency_out = "Lira (LBP)"
@@ -721,12 +722,20 @@ class StoreApp:
                 continue
 
             if f_cat != "All":
-                if store_name == "Main Vault" and f_type == "Income":
-                    target_match = f"from {f_cat}"
-                    if categ != target_match:
-                        continue
+
+                if f_cat == "Exchange In/Out":
+                    allowed_categories = ["Exchange In", "Exchange Out"]
+
+                elif store_name == "Main Vault":
+                    allowed_categories = [f_cat, f"from {f_cat}"]
+
                 else:
-                    if categ != f_cat : continue
+                    allowed_categories = [f_cat]
+
+                if categ not in allowed_categories:
+                    continue
+
+            
 
             self.current_data.append(row)
 
