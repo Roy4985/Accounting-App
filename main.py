@@ -130,12 +130,12 @@ class DatabaseManager:
 
         return self.c.fetchall()
     
-    def update_transaction_full(self, record_id, new_date, new_cat, new_amt):
+    def update_transaction_full(self, record_id, new_date, new_cat, new_amt, new_desc):
         self.c.execute("""
                        UPDATE transactions
-                       SET date = ?, category = ?, amount = ?
+                       SET date = ?, category = ?, amount = ?, description = ?
                        WHERE id = ?
-                       """, (new_date, new_cat, new_amt, record_id))
+                       """, (new_date, new_cat, new_amt, new_desc, record_id))
         
         self.c.execute("UPDATE transactions SET date = ? WHERE parent_id = ?",(new_date, record_id))
 
@@ -331,7 +331,7 @@ class StoreApp:
         add_btn.grid(row=0, column=0, sticky="ew", padx=(10, 5), ipady=5)
 
         exchange_btn = tk.Button(input_btn_frame, text="Exchange", font=("Segoe UI", 10, "bold"), bg="#e67e22", fg="white", cursor="hand2", relief="flat",command=self.open_exchange_window)
-        exchange_btn.grid(row=0, column=2, sticky="ew", padx=(5, 10), ipady=5)
+        exchange_btn.grid(row=0, column=1, sticky="ew", padx=(5, 10), ipady=5)
 
         #filter side
         filter_frame = ttk.LabelFrame(master_frame, text="Filters")
@@ -472,6 +472,7 @@ class StoreApp:
         old_amt = record[6]
         old_type = record[4]
         old_paym = record[8]
+        old_desc = record[9] if record[9] else ""
 
         edit_win = tk.Toplevel(self.root)
         edit_win.title("Edit Record")
@@ -487,6 +488,11 @@ class StoreApp:
         cat_entry.set(old_cat)
         cat_entry.pack()
 
+        tk.Label(edit_win, text="Description:").pack(pady=5)
+        desc_entry = tk.Entry(edit_win, width=30)
+        desc_entry.insert(0, old_desc)
+        desc_entry.pack()
+
         tk.Label(edit_win, text="Amount (Cannot change math yet):").pack(pady=5)
         amt_entry = tk.Entry(edit_win)
         amt_entry.insert(0, str(old_amt))
@@ -497,8 +503,9 @@ class StoreApp:
                 new_date = date_entry.get()
                 new_cat = cat_entry.get()
                 new_amt = float(amt_entry.get())
+                new_desc = desc_entry.get()
 
-                self.db.update_transaction_full(final_id, new_date, new_cat, new_amt)
+                self.db.update_transaction_full(final_id, new_date, new_cat, new_amt, new_desc)
 
                 if old_type == "Income" and new_amt != old_amt:
 
@@ -834,9 +841,6 @@ class StoreApp:
         start_date = self.date_from.get()
         end_date = self.date_to.get()
 
-        start_date = self.date_from.get()
-        end_date = self.date_to.get()
-
         total_usd_cash = 0
         total_usd_card = 0
         total_lbp_cash = 0
@@ -994,7 +998,7 @@ class StoreApp:
             with open(filename, mode='w', newline='', encoding='utf-8') as file:
                 writer = csv.writer(file)
 
-                headers = ["ID", "Date", "Type", "Category", "Amount", "Currency", "Method"]
+                headers = ["ID", "Date", "Type", "Category", "Amount", "Currency", "Method", "Description"]
                 writer.writerow(headers)
 
                 writer.writerows(rows)
