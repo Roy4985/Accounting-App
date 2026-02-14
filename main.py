@@ -15,6 +15,17 @@ class DatabaseManager:
 
         self.create_tables()
 
+        self.run_migrations()
+
+    #Migration for 1.2 update (Add description columns without destrying the already in use db)
+    def run_migrations(self):
+        try:
+            self.c.execute("ALTER TABLE transactions ADD COLUMN description TEXT")
+            self.conn.commit()
+            print("Database upgraded: Added description column.")
+        except sqlite3.OperationalError:
+            pass
+
     #This will create the required tables (stores and transactions if not created) and check if stores is empty to add the default stores
     def create_tables(self):
         self.c.execute("""
@@ -96,14 +107,14 @@ class DatabaseManager:
         return names
 
         
-    def add_transactions(self, store_name, t_date, t_type, category, amount, currency, p_method, parent_id=None):
+    def add_transactions(self, store_name, t_date, t_type, category, amount, currency, p_method, parent_id=None, description=None):
         self.c.execute("SELECT id FROM stores WHERE name = ?", (store_name,))
         result = self.c.fetchone()
 
         if result:
             store_id = result[0]
 
-            self.c.execute("INSERT INTO transactions (store_id, parent_id, date, type, category, amount, currency, payment_method) VALUES (?,?,?,?,?,?,?,?)", (store_id, parent_id,t_date, t_type, category, amount, currency, p_method))
+            self.c.execute("INSERT INTO transactions (store_id, parent_id, date, type, category, amount, currency, payment_method, description) VALUES (?,?,?,?,?,?,?,?,?)", (store_id, parent_id,t_date, t_type, category, amount, currency, p_method, description))
             self.conn.commit()
             return self.c.lastrowid
         else:
@@ -111,7 +122,7 @@ class DatabaseManager:
 
     def get_transactions(self, store_name):
         self.c.execute("""
-            SELECT t.id, t.date, t.type, t.category, t.amount, t.currency, t.payment_method FROM transactions t
+            SELECT t.id, t.date, t.type, t.category, t.amount, t.currency, t.payment_method, IFNULL(t.description, '') FROM transactions t
             JOIN stores s ON t.store_id = s.id
             WHERE s.name = ?
             ORDER BY t.date DESC
@@ -249,6 +260,11 @@ class StoreApp:
             self.toggle_category_state()
             self.update_filter_dropdown()
 
+            try:
+                self.no_main_var.set(0)
+            except AttributeError:
+                pass
+
         self.store_combo.bind("<<ComboboxSelected>>", on_branch_change)
 
     def setup_inputs(self):
@@ -295,8 +311,17 @@ class StoreApp:
         self.paym_combo.current(0)
         self.paym_combo.grid(row=1, column=5, padx=5, pady=5) 
 
+        tk.Label(input_frame, text="Description (Opt):", bg=self.colors["bg"]).grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.desc_entry = tk.Entry(input_frame, width=35)
+        self.desc_entry.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="w")
+
+        self.no_main_var = tk.IntVar()
+        no_main_chk = tk.Checkbutton(input_frame, text="Skip Main", variable=self.no_main_var, bg=self.colors["bg"], activebackground=self.colors["bg"])
+        no_main_chk.grid(row=2, column=4, columnspan=2, sticky="w", padx=5)
+
+        #Input buttons section
         input_btn_frame = tk.Frame(input_frame, background=self.colors["bg"])
-        input_btn_frame.grid(row=2, column=0, columnspan=6, pady=15, sticky="ew")
+        input_btn_frame.grid(row=3, column=0, columnspan=6, pady=15, sticky="ew")
 
         # To give both buttons equal sapce
         input_btn_frame.columnconfigure(0, weight=1)
@@ -306,7 +331,7 @@ class StoreApp:
         add_btn.grid(row=0, column=0, sticky="ew", padx=(10, 5), ipady=5)
 
         exchange_btn = tk.Button(input_btn_frame, text="Exchange", font=("Segoe UI", 10, "bold"), bg="#e67e22", fg="white", cursor="hand2", relief="flat",command=self.open_exchange_window)
-        exchange_btn.grid(row=0, column=1, sticky="ew", padx=(5, 10), ipady=5)
+        exchange_btn.grid(row=0, column=2, sticky="ew", padx=(5, 10), ipady=5)
 
         #filter side
         filter_frame = ttk.LabelFrame(master_frame, text="Filters")
@@ -350,6 +375,7 @@ class StoreApp:
         self.date_to.delete(0, "end")
         self.date_to.grid(row=2, column=3, padx=5)
 
+        #filter Buttons section
         filter_btn_frame = tk.Frame(filter_frame, )
         filter_btn_frame.grid(row=3, column=0, columnspan=4, pady=10)
 
@@ -367,18 +393,20 @@ class StoreApp:
         tree_frame = tk.Frame(main_content)
         tree_frame.pack(fill="both", expand=True)
 
-        cols = ("ID", "Date", "Type", "Category", "Amount", "Currency", "Payment Method")
+        cols = ("ID", "Date", "Type", "Category", "Amount", "Currency", "Payment Method", "Description")
 
-        visible_cols = ("Date", "Type", "Category", "Amount", "Currency", "Payment Method")
+        visible_cols = ("Date", "Type", "Category", "Amount", "Currency", "Payment Method", "Description")
 
         self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings", displaycolumns=visible_cols)
 
-        self.tree.column("Date", width=100, anchor=tk.CENTER)
-        self.tree.column("Type", width=80, anchor=tk.CENTER)
-        self.tree.column("Category", width=150, anchor=tk.W)
-        self.tree.column("Amount", width=100, anchor=tk.E)  
-        self.tree.column("Currency", width=80, anchor=tk.CENTER)
+        self.tree.column("Date", width=90, anchor=tk.CENTER)
+        self.tree.column("Type", width=70, anchor=tk.CENTER)
+        self.tree.column("Category", width=130, anchor=tk.W)
+        self.tree.column("Description", width=200, anchor=tk.W)
+        self.tree.column("Amount", width=90, anchor=tk.E)  
+        self.tree.column("Currency", width=70, anchor=tk.CENTER)
         self.tree.column("Payment Method", width=80, anchor=tk.CENTER)
+        
 
         for col in visible_cols:
             self.tree.heading(col, text=col)
@@ -396,9 +424,6 @@ class StoreApp:
         bottom_frame = tk.Frame(main_content, bg=self.colors["bg"])
         bottom_frame.pack(fill="x", pady=10)
 
-        delete_btn = tk.Button(bottom_frame, text="Delete Selected", bg=self.colors["danger"], fg="white", command=self.delete_record)
-        delete_btn.pack(side=tk.LEFT, padx=5)
-
         export_btn = tk.Button(bottom_frame, text="Export to Excel", bg=self.colors["accent"], fg="white", command=self.export_to_excel)
         export_btn.pack(side=tk.LEFT, padx=5)
 
@@ -406,18 +431,24 @@ class StoreApp:
         self.status_label = tk.Label(bottom_frame, text="Loading...", font=("Segoe UI", 12, "bold"), bg=self.colors["bg"], justify=tk.RIGHT)
         self.status_label.pack(side=tk.RIGHT)
 
-        #Edit Part 
+        #Right click menu part 
         self.context_menu = tk.Menu(self.root, tearoff=0)
+
         self.context_menu.add_command(label="Edit Record", command=self.open_edit_window)
 
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Delete Record", command=self.delete_record)
         self.tree.bind("<Button-3>", self.show_context_menu)
 
     def show_context_menu(self, event):
-        item_id = self.tree.identify_row(event.y)
+        try:
+            item_id = self.tree.identify_row(event.y)
 
-        if item_id:
-            self.tree.selection_set(item_id)
-            self.context_menu.post(event.x_root, event.y_root)
+            if item_id:
+                self.tree.selection_set(item_id)
+                self.context_menu.post(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
 
     def open_edit_window(self):
         selected_item = self.tree.selection()
@@ -731,8 +762,8 @@ class StoreApp:
         amt = self.amount_entry.get()
         cur = self.cur_combo.get()
         paym = self.paym_combo.get()
-
         date_val = self.date_entry.get()
+        desc = self.desc_entry.get()
 
         if not date_val.strip():
             date_val = datetime.now().strftime("%Y-%m-%d")
@@ -745,7 +776,7 @@ class StoreApp:
             val = float(amt)
             today = date_val
 
-            main_id = self.db.add_transactions(store, today, t_type, cat, val, cur, paym, parent_id = None)
+            main_id = self.db.add_transactions(store, today, t_type, cat, val, cur, paym, parent_id = None, description=desc)
 
             if cat == "Cost of goods" and t_type == "Expense":
                 freight_rate = self.db.get_rate("freight_rate")
@@ -758,10 +789,12 @@ class StoreApp:
                 main_rate = self.db.get_rate("main_rate")
                 tva_rate = self.db.get_rate("tva_rate")
                 card_rate = self.db.get_rate("comm_rate")
+                main_skip = self.no_main_var.get()
 
-                amount_main = round(val * (main_rate / 100), 2)
-                self.db.add_transactions(store, today, "Expense", f"Main ({main_rate:g}%)", amount_main, cur, paym, parent_id = main_id)
-                self.db.add_transactions("Main Vault", today, "Income", f"from {store}", amount_main, cur, paym, parent_id = main_id)
+                if main_skip == 0:
+                    amount_main = round(val * (main_rate / 100), 2)
+                    self.db.add_transactions(store, today, "Expense", f"Main ({main_rate:g}%)", amount_main, cur, paym, parent_id = main_id)
+                    self.db.add_transactions("Main Vault", today, "Income", f"from {store}", amount_main, cur, paym, parent_id = main_id)
 
                 amount_tva = round(val * (tva_rate / 100), 2)
                 self.db.add_transactions(store, today, "Expense", f"TVA ({tva_rate:g}%)", amount_tva, cur, paym, parent_id = main_id)
@@ -776,6 +809,7 @@ class StoreApp:
 
             self.amount_entry.delete(0, tk.END)
             self.date_entry.set_date(datetime.now())
+            self.desc_entry.delete(0, tk.END)
 
             self.type_combo.current(0)
             self.toggle_category_state()
@@ -997,4 +1031,3 @@ if __name__ == "__main__":
     app = StoreApp(root)
     root.mainloop()
     
-
