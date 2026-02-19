@@ -200,6 +200,8 @@ class StoreApp:
 
         self.setup_styles()
 
+        self.system_accounts = ["Main Vault", "TVA Account", "Bank Commission", "Cost of goods", "Freight"]
+
         self.category_list = [
             "Salaries",
             "Rent",
@@ -462,7 +464,14 @@ class StoreApp:
         self.db.c.execute("SELECT parent_id FROM transactions WHERE id = ?", (clicked_id,))
         result = self.db.c.fetchone()
 
-        final_id = result[0] if result and result[0] else clicked_id
+        if result and result[0]:
+            messagebox.showwarning(
+                "Locked Record",
+                "This is an auto-generated system record.\n\nTo change it, please go to the original branch and edit the source transaction"
+            )
+            return
+
+        final_id = clicked_id
 
         self.db.c.execute("SELECT * FROM transactions WHERE id = ?", (final_id,))
         record = self.db.c.fetchone()
@@ -483,8 +492,18 @@ class StoreApp:
         date_entry.set_date(old_date)
         date_entry.pack()
 
+        valid_categories = []
+        store = self.store_combo.get()
+        if old_type == "Income":
+                    valid_categories = ["Cash Flow"]
+        else:
+            if store == "Main Vault":
+                valid_categories = self.main_category_list
+            else:
+                valid_categories = self.category_list
+
         tk.Label(edit_win, text="Category:").pack(pady=5)
-        cat_entry = ttk.Combobox(edit_win, values=self.category_list)
+        cat_entry = ttk.Combobox(edit_win, values=valid_categories, state="readonly")
         cat_entry.set(old_cat)
         cat_entry.pack()
 
@@ -493,7 +512,7 @@ class StoreApp:
         desc_entry.insert(0, old_desc)
         desc_entry.pack()
 
-        tk.Label(edit_win, text="Amount (Cannot change math yet):").pack(pady=5)
+        tk.Label(edit_win, text="Amount:").pack(pady=5)
         amt_entry = tk.Entry(edit_win)
         amt_entry.insert(0, str(old_amt))
         amt_entry.pack()
@@ -592,144 +611,174 @@ class StoreApp:
         top.configure(bg=self.colors["bg"])
         top.resizable(False, False)
 
-        header_frame = tk.Frame(top, bg=self.colors["header"], height=60)
-        header_frame.pack(fill="x")
+        notebook = ttk.Notebook(top)
+        notebook.pack(fill="both", expand=True, padx=15, pady=15)
 
-        tk.Label(header_frame, text="Currency Exchange", font=("Segoe UI", 16, "bold"), 
-                 bg=self.colors["header"], fg="white").pack(pady=15)
+        currency_exchange_frame = tk.Frame(notebook, bg=self.colors["bg"])
+        bank_transfer_frame = tk.Frame(notebook, bg=self.colors["bg"])
 
-        page_frame = tk.Frame(top, bg=self.colors["bg"])
-        page_frame.pack(fill="both", expand=False, padx=30, pady=20)
+        notebook.add(currency_exchange_frame, text="Currency Exchange")
+        notebook.add(bank_transfer_frame, text="Bank Transfer")
 
-        tk.Label(page_frame, text="Amount to Change:", font=("Segoe UI", 12), bg=self.colors["bg"]).pack(anchor="w", pady=(0,5))
-        amt_entry = tk.Entry(page_frame, width=20, font=("Segoe UI", 12), bd=2, relief="flat")
-        amt_entry.pack(fill="x", ipady=5)
+        tk.Label(currency_exchange_frame, text="Currency Exchange", font=("Segoe UI", 14, "bold"), 
+                 bg=self.colors["header"], fg="white").pack(fill="x", pady=(0, 15), ipady=10)
 
-        tk.Label(page_frame, text="Direction:", font=("Segoe UI", 10), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
-        directions = ["USD -> LBP", "LBP -> USD"]
-        dir_combo_var = tk.StringVar()
-        dir_combo = ttk.Combobox(page_frame, textvariable=dir_combo_var, values=directions, state="readonly", font=("Segoe UI", 11))
-        dir_combo.current(0)
-        dir_combo.pack(fill="x", ipady=4)
+        pad_frame_ce = tk.Frame(currency_exchange_frame, bg=self.colors["bg"])
+        pad_frame_ce.pack(fill="both", expand=True, padx=20)
 
-        tk.Label(page_frame, text="Exchange Rate:", font=("Segoe UI", 10), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
-        rate_entry = tk.Entry(page_frame , font=("Segoe UI", 12), width=20, bd=2, relief="flat")
-        rate_entry.insert(0, self.db.get_rate("exchange_rate"))
-        rate_entry.pack(fill="x", ipady=5)
+        tk.Label(pad_frame_ce, text="Amount to Change:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(0,5))
+        amt_entry_ce = tk.Entry(pad_frame_ce, width=20, font=("Segoe UI", 12), bd=2, relief="flat")
+        amt_entry_ce.pack(fill="x", ipady=5)
 
-        result_frame = tk.Frame(page_frame, bg="#dfe6e9", bd=1, relief="solid")
-        result_frame.pack(fill="x", pady=25)
+        tk.Label(pad_frame_ce, text="Direction:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
+        dir_combo_var_ce = tk.StringVar()
+        dir_combo_ce = ttk.Combobox(pad_frame_ce, textvariable=dir_combo_var_ce, values=["USD -> LBP", "LBP -> USD"], state="readonly", font=("Segoe UI", 11))
+        dir_combo_ce.current(0)
+        dir_combo_ce.pack(fill="x", ipady=4)
 
-        result_text = tk.StringVar()
-        result_text.set("---")
+        tk.Label(pad_frame_ce, text="Exchange Rate:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
+        rate_entry_ce = tk.Entry(pad_frame_ce , font=("Segoe UI", 12), width=20, bd=2, relief="flat")
+        rate_entry_ce.insert(0, self.db.get_rate("exchange_rate"))
+        rate_entry_ce.pack(fill="x", ipady=5)
 
-        result_label = tk.Label(result_frame, textvariable=result_text, font=("Consolas", 14, "bold"), bg="#dfe6e9", fg="#2d3436")
-        result_label.pack(pady=10)
+        result_frame_ce = tk.Frame(pad_frame_ce, bg="#dfe6e9", bd=1, relief="solid")
+        result_frame_ce.pack(fill="x", pady=25)
+
+        result_text_ce = tk.StringVar()
+        result_text_ce.set("---")
+        tk.Label(result_frame_ce, textvariable=result_text_ce, font=("Consolas", 14, "bold"), bg="#dfe6e9", fg="#2d3436").pack(pady=10)
+
+        exchange_btn_ce = tk.Button(currency_exchange_frame, text="CONFIRM EXCHANGE", command=lambda: process_transaction("transfer"), bg=self.colors["accent"], fg="white", font=("Segoe UI", 12, "bold"), relief="flat", cursor="hand2")
+        exchange_btn_ce.pack(side=tk.BOTTOM, fill="x", pady=20, padx=20, ipady=10)
+
+        tk.Label(bank_transfer_frame, text="Bank Transfer", font=("Segoe UI", 14, "bold"), 
+                 bg=self.colors["header"], fg="white").pack(fill="x", pady=(0, 15), ipady=10)
+
+        pad_frame_bt = tk.Frame(bank_transfer_frame, bg=self.colors["bg"])
+        pad_frame_bt.pack(fill="both", expand=True, padx=20)
+
+        tk.Label(pad_frame_bt, text="Amount to Move:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(0,5))
+        amt_entry_bt = tk.Entry(pad_frame_bt, width=20, font=("Segoe UI", 12), bd=2, relief="flat")
+        amt_entry_bt.pack(fill="x", ipady=5)
+
+        tk.Label(pad_frame_bt, text="Currency:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
+        cur_combo_var_bt = tk.StringVar()
+        cur_combo_bt = ttk.Combobox(pad_frame_bt, textvariable=cur_combo_var_bt, values=["USD ($)", "Lira (LBP)"], state="readonly", font=("Segoe UI", 11))
+        cur_combo_bt.current(0)
+        cur_combo_bt.pack(fill="x", ipady=4)
+
+        tk.Label(pad_frame_bt, text="Direction:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
+        dir_combo_var_bt = tk.StringVar()
+        dir_combo_bt = ttk.Combobox(pad_frame_bt, textvariable=dir_combo_var_bt, values=["Cash -> Card", "Card -> Cash"], state="readonly", font=("Segoe UI", 11))
+        dir_combo_bt.current(0)
+        dir_combo_bt.pack(fill="x", ipady=4)
+
+        exchange_btn_bt = tk.Button(bank_transfer_frame, text="CONFIRM TRANSFER", command=lambda: process_transaction("transfer"), bg=self.colors["accent"], fg="white", font=("Segoe UI", 12, "bold"), relief="flat", cursor="hand2")
+        exchange_btn_bt.pack(side=tk.BOTTOM, fill="x", pady=20, padx=20, ipady=10)
 
         def update_preview(event=None):
             try:
-                amt_str = amt_entry.get()
-                rate_str = rate_entry.get()
+                amt_str = amt_entry_ce.get()
+                rate_str = rate_entry_ce.get()
 
                 if not amt_str or not rate_str:
-                    result_text.set("Result: ...")
+                    result_text_ce.set("Result: ...")
                     return
                 
                 amount = float(amt_str)
                 rate=float(rate_str)
-                direction = dir_combo.get()
+                direction = dir_combo_ce.get()
 
                 if direction == "USD -> LBP":
                     res = amount * rate
-                    result_text.set(f"Will receive: {res:,.0f} L.L")
+                    result_text_ce.set(f"Will receive: {res:,.0f} L.L")
                 else:
                     res = amount / rate
-                    result_text.set(f"Will Receive: {res:,.2f}")
+                    result_text_ce.set(f"Will Receive: {res:,.2f}")
 
             except ValueError:
-                result_text.set("Result: ...")
+                result_text_ce.set("Result: ...")
 
-        def execute_exchange():
+        def process_transaction(action_type):
             try:
-                amount = float(amt_entry.get())
-                rate = float(rate_entry.get())
-                direction = dir_combo.get()
                 store = self.store_combo.get()
                 today = datetime.now().strftime("%Y-%m-%d")
 
-                if direction == "USD -> LBP":
-                    converted_amt = round(amount * rate, 0)
+                if action_type == "currency":
+                    amount = float(amt_entry_ce.get())
+                    rate = float(rate_entry_ce.get())
+                    direction = dir_combo_var_ce.get()
+                    
+                    if direction == "USD -> LBP":
+                        converted_amt = round(amount * rate, 0)
+                        cur_out = "USD ($)"
+                        cur_in = "Lira (LBP)"
+                    else:
+                        converted_amt = round(amount / rate, 2)
+                        cur_out = "Lira (LBP)"
+                        cur_in = "USD ($)"
+                    
+                    cat_out = "Exchange Out"
+                    cat_in = "Exchange In"
+                    paym_out = "Cash"
+                    paym_in = "Cash"
 
-                    currency_out = "USD ($)"
-                    currency_in = "Lira (LBP)"
+                elif action_type == "transfer":
+                    amount = float(amt_entry_bt.get())
+                    converted_amt = amount # Bank transfers are 1:1
+                    cur_out = cur_combo_var_bt.get()
+                    cur_in = cur_out
+                    direction = dir_combo_var_bt.get()
+                    
+                    if direction == "Cash -> Card":
+                        paym_out = "Cash"
+                        paym_in = "Card"
+                    else:
+                        paym_out = "Card"
+                        paym_in = "Cash"
+                        
+                    cat_out = "Bank Transfer Out"
+                    cat_in = "Bank Transfer In"
 
-                    result_text.set(f"{converted_amt:,.0f} L.L")
-                
-                else:
-                    converted_amt = round(amount / rate, 2)
-
-                    currency_in = "USD ($)"
-                    currency_out = "Lira (LBP)"
-
-                    result_text.set(f"${converted_amt:,.2f}")
-                
                 parent_id = self.db.add_transactions(
-                    store,
-                    today,
-                    "Expense",
-                    "Exchange Out",
-                    amount,
-                    currency_out,
-                    "Cash",
-                    parent_id = None
+                    store, today, "Expense", cat_out, amount, cur_out, paym_out, parent_id=None
                 )
 
                 self.db.add_transactions(
-                    store,
-                    today,
-                    "Income",
-                    "Exchange In",
-                    converted_amt,
-                    currency_in,
-                    "Cash",
-                    parent_id=parent_id
+                    store, today, "Income", cat_in, converted_amt, cur_in, paym_in, parent_id=parent_id
                 )
 
-                messagebox.showinfo("Success", "Exchange Recorded!", parent=top)
+                messagebox.showinfo("Success", "Transaction Recorded successfully!", parent=top)
                 top.destroy()
                 self.view_records()
             
             except ValueError:
-                messagebox.showerror("Error", "Please enter valid numbers", parent=top)
+                messagebox.showerror("Error", "Please enter a valid number.", parent=top)
 
 
-        amt_entry.bind("<KeyRelease>", update_preview)
-        rate_entry.bind("<KeyRelease>", update_preview)
-        dir_combo.bind("<<ComboboxSelected>>", update_preview)
-
-        exchange_btn = tk.Button(top, text="CONFIRM EXCHANGE", command=execute_exchange, bg=self.colors["accent"], fg="white", font=("Segoe UI", 12, "bold"), relief="flat", cursor="hand2")
-        exchange_btn.pack(side=tk.BOTTOM, fill="x", pady=20, padx=20, ipady=10)
+        amt_entry_ce.bind("<KeyRelease>", update_preview)
+        rate_entry_ce.bind("<KeyRelease>", update_preview)
+        dir_combo_ce.bind("<<ComboboxSelected>>", update_preview)
 
     def toggle_category_state(self, event=None):
         current_type = self.type_combo.get()
         current_store = self.store_combo.get()
 
-        system_accounts = ["TVA Account", "Bank Commission", "Cost of goods", "Freight"]
-
-
         if current_type == "Income":
             self.cat_combo.set("Cash Flow")
             self.cat_combo.config(state="disabled")
         else:
-            if current_store in system_accounts:
-                self.cat_combo.config(state="normal")
-                self.cat_combo['values'] = []
-                self.cat_combo.delete(0, "end")
+            if current_store in self.system_accounts:
 
-            elif current_store == "Main Vault":
-                self.cat_combo.config(state="readonly")
-                self.cat_combo['values'] = self.main_category_list
-                self.cat_combo.current(0)
+                if current_store == "Main Vault":
+                    self.cat_combo.config(state="readonly")
+                    self.cat_combo['values'] = self.main_category_list
+                    self.cat_combo.current(0)
+                
+                else:
+                    self.cat_combo.config(state="normal")
+                    self.cat_combo['values'] = []
+                    self.cat_combo.delete(0, "end")
 
             else:
                 self.cat_combo.config(state="readonly")
@@ -880,7 +929,7 @@ class StoreApp:
                 if f_cat == "Exchange In/Out":
                     allowed_categories = ["Exchange In", "Exchange Out"]
 
-                elif store_name == "Main Vault":
+                elif store_name in self.system_accounts:
                     allowed_categories = [f_cat, f"from {f_cat}"]
 
                 else:
@@ -933,15 +982,11 @@ class StoreApp:
 
         new_values = ["All"]
 
-        system_accounts = ["TVA Account", "Bank Commission", "Cost of goods", "Freight"]
-
-        exclude_list = ["Main Vault"] + system_accounts
-
-        if current_store == "Main Vault" or current_store in system_accounts:
+        if current_store in self.system_accounts:
             if f_type == "Income":
                 self.filter_cat.config(state="readonly")
                 all_branches = self.db.get_store_names()
-                real_branches = [s for s in all_branches if s not in exclude_list]
+                real_branches = [s for s in all_branches if s not in self.system_accounts]
                 new_values += real_branches
 
             elif f_type == "Expense":
@@ -955,7 +1000,7 @@ class StoreApp:
             else :
                 self.filter_cat.config(state="readonly")
                 all_branches = self.db.get_store_names()
-                real_branches = [s for s in all_branches if s not in exclude_list]
+                real_branches = [s for s in all_branches if s not in self.system_accounts]
                 if current_store == "Main Vault":
                     new_values += self.main_category_list + real_branches
                 else:
