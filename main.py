@@ -55,6 +55,12 @@ class DatabaseManager:
                        )
         """)
 
+        self.c.execute("""CREATE TABLE IF NOT EXISTS daily_sales (
+                       date TEXT,
+                       store_id INTEGER,
+                       amount REAL,
+                       PRIMARY KEY (store_id, date))""")
+
         self.c.execute("CREATE INDEX IF NOT EXISTS idx_store_date ON transactions(store_id, date)")
         
         self.c.execute("CREATE INDEX IF NOT EXISTS idx_parent ON transactions(parent_id)")
@@ -105,6 +111,39 @@ class DatabaseManager:
         for row in self.c.fetchall():
             names.append(row[0])
         return names
+    
+    def get_store_id(self, store_name):
+        self.c.execute("SELECT id FROM stores WHERE name = ?", (store_name,))
+        #Safety check
+        result = self.c.fetchone()
+        if not result:
+            print(f"Error Store '{store_name}' not found")
+            return
+        return result[0]
+    
+    def save_daily_sale(self, store_name, t_date, t_amount):
+    
+        store_id = self.get_store_id(store_name)
+        #In case of an error where there is no ID provided
+        if not store_id:
+            return
+
+        #I used INSERT OR REPLACE to overwrite a sale, if its in the same day, same store
+        self.c.execute("INSERT OR REPLACE INTO daily_sales (date, store_id, amount) VALUES (?,?,?)", (t_date, store_id, t_amount))
+
+        self.conn.commit()
+
+    def get_daily_sale(self, store_name, t_date):
+        store_id = self.get_store_id(store_name)
+
+        self.c.execute("SELECT amount FROM daily_sales WHERE store_id = ? AND date = ?", (store_id, t_date))
+        amount = self.c.fetchone()
+        if amount == None:
+            return 0
+        else :
+            return amount[0]
+        
+
 
         
     def add_transactions(self, store_name, t_date, t_type, category, amount, currency, p_method, parent_id=None, description=None):
@@ -168,6 +207,18 @@ class DatabaseManager:
         self.c.execute("DELETE FROM transactions WHERE id = ?",(record_id,))
 
         self.conn.commit()
+
+
+    def get_balance_summary(self):
+        query = """
+            SELECT s.name, t.currency, t.payment_method, 
+                   SUM(CASE WHEN t.type = 'Income' THEN t.amount ELSE -t.amount END) as balance
+            FROM transactions t
+            JOIN stores s ON t.store_id = s.id
+            GROUP BY s.name, t.currency, t.payment_method
+        """
+        self.c.execute(query)
+        return self.c.fetchall()
         
 #This class will be used for the user interface (GUI)
 class StoreApp:
@@ -211,6 +262,7 @@ class StoreApp:
             "Various",
             "Cost of goods",
             "Cleaner",
+            "Main",
         ]
 
         self.main_category_list = [
@@ -221,6 +273,7 @@ class StoreApp:
             "Bags & EAS",
             "Social Media",
             "Electricity & Phone",
+            "Profit Distribution",
             "Yearly Fees",
             "Rent",
             "Transportation",
@@ -248,6 +301,16 @@ class StoreApp:
                                  font=("Segoe UI", 10, "bold"), relief="raised", bd=1, activebackground="#3498db", cursor="hand2",
                                  command=self.open_settings_window)
         settings_btn.pack(side=tk.RIGHT, padx=20, pady=10)
+
+        balance_btn = tk.Button(header_frame, text="📊 Balances", bg="#8e44ad", fg="white", 
+                                 font=("Segoe UI", 10, "bold"), relief="raised", bd=1, cursor="hand2",
+                                 command=self.open_balances_window)
+        balance_btn.pack(side=tk.RIGHT, padx=5, pady=10)
+
+        recon_btn = tk.Button(header_frame, text="📅 Daily Recon", bg="#e67e22", fg="white", 
+                                 font=("Segoe UI", 10, "bold"), relief="raised", bd=1, cursor="hand2",
+                                 command=self.open_daily_reconciliation_window)
+        recon_btn.pack(side=tk.RIGHT, padx=5, pady=10)
 
         all_stores = self.db.get_store_names()
 
@@ -347,7 +410,7 @@ class StoreApp:
         self.filter_type.bind("<<ComboboxSelected>>", self.update_filter_dropdown)
 
         tk.Label(filter_frame, text="Filter Category:", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=10)
-        full_cat_list = ["All", "Cash Flow", "Exchange In/Out"] + self.category_list
+        full_cat_list = ["All", "Sales", "Investment", "Exchange In/Out", "Bank Transfer In/Out"] + self.category_list
         self.filter_cat_var = tk.StringVar()
         self.filter_cat = ttk.Combobox(filter_frame, textvariable="self.filter_cat_var", values= full_cat_list, state="readonly", width=15)
         self.filter_cat.current(0)
@@ -495,7 +558,7 @@ class StoreApp:
         valid_categories = []
         store = self.store_combo.get()
         if old_type == "Income":
-                    valid_categories = ["Cash Flow"]
+                    valid_categories = ["Sales", "Investment"]
         else:
             if store == "Main Vault":
                 valid_categories = self.main_category_list
@@ -503,8 +566,13 @@ class StoreApp:
                 valid_categories = self.category_list
 
         tk.Label(edit_win, text="Category:").pack(pady=5)
-        cat_entry = ttk.Combobox(edit_win, values=valid_categories, state="readonly")
+        cat_entry = ttk.Combobox(edit_win, values=valid_categories)
         cat_entry.set(old_cat)
+        if old_cat == "Main":
+            cat_entry.config(state="disabled")
+        else :
+            cat_entry.config(state="readonly")
+
         cat_entry.pack()
 
         tk.Label(edit_win, text="Description:").pack(pady=5)
@@ -541,6 +609,9 @@ class StoreApp:
                     if old_paym == "Card":
                         val_comm = round(new_amt * (comm_rate / 100), 2)
                         self.db.update_smart_pair(final_id, "Bank Commission", "Card Commission",val_comm)
+                    
+                elif old_type == "Expense" and old_cat == "Main" and new_amt != old_amt:
+                    self.db.update_smart_pair(final_id, "Main Vault", "from", new_amt)
 
                 messagebox.showinfo("Success", "Record Updated!")
                 edit_win.destroy()
@@ -760,13 +831,337 @@ class StoreApp:
         rate_entry_ce.bind("<KeyRelease>", update_preview)
         dir_combo_ce.bind("<<ComboboxSelected>>", update_preview)
 
+    def open_balances_window(self):
+        top = tk.Toplevel(self.root)
+        top.title("All Branch Balances")
+        top.geometry("700x500")
+        top.configure(bg=self.colors["bg"])
+
+        tk.Label(top, text="Current Balance Sheet", font=("Segoe UI", 16, "bold"), 
+                 bg=self.colors["bg"], fg=self.colors["header"]).pack(pady=15)
+
+        cols = ("Branch", "USD Cash", "USD Card", "LBP Cash", "LBP Card")
+        tree = ttk.Treeview(top, columns=cols, show="headings", height=15)
+        
+
+        tree.heading("Branch", text="Branch")
+        tree.column("Branch", width=140, anchor="w")
+        
+        for col in cols[1:]:
+            tree.heading(col, text=col)
+            tree.column(col, width=120, anchor="e")
+
+        tree.pack(fill="both", expand=True, padx=20, pady=10)
+
+        raw_data = self.db.get_balance_summary()
+
+        branch_data = {}
+        all_stores = self.db.get_store_names()
+
+
+        for store in all_stores:
+            branch_data[store] = {"USD ($)": {"Cash": 0, "Card": 0}, "Lira (LBP)": {"Cash": 0, "Card": 0}}
+
+
+        for row in raw_data:
+            store, curr, method, amount = row
+            if store in branch_data:
+                branch_data[store][curr][method] = amount
+
+        grand_totals = [0, 0, 0, 0]
+
+        for store in all_stores:
+            d = branch_data[store]
+            
+            usd_cash = d["USD ($)"]["Cash"]
+            usd_card = d["USD ($)"]["Card"]
+            lbp_cash = d["Lira (LBP)"]["Cash"]
+            lbp_card = d["Lira (LBP)"]["Card"]
+
+
+            grand_totals[0] += usd_cash
+            grand_totals[1] += usd_card
+            grand_totals[2] += lbp_cash
+            grand_totals[3] += lbp_card
+
+
+            values = (
+                store,
+                f"${usd_cash:,.2f}",
+                f"${usd_card:,.2f}",
+                f"{lbp_cash:,.0f} L.L",
+                f"{lbp_card:,.0f} L.L"
+            )
+            tree.insert("", "end", values=values)
+
+        tree.insert("", "end", values=("TOTALS:", 
+                                       f"${grand_totals[0]:,.2f}", 
+                                       f"${grand_totals[1]:,.2f}", 
+                                       f"{grand_totals[2]:,.0f} L.L", 
+                                       f"{grand_totals[3]:,.0f} L.L"), 
+                                       tags=("total_row",))
+        
+        tree.tag_configure("total_row", background="#2c3e50", foreground="white", font=("Segoe UI", 10, "bold"))
+
+    def open_daily_reconciliation_window(self):
+        # 1. Window Setup
+        top = tk.Toplevel(self.root)
+        top.title("Daily Reconciliation")
+        top.geometry("1100x700") 
+        top.configure(bg=self.colors["bg"])
+
+        # --- Section 1: Header (Setup & Target) ---
+        header_frame = tk.Frame(top, bg=self.colors["header"], height=120)
+        header_frame.pack(fill="x")
+
+        # Left Side: Selectors
+        setup_frame = tk.Frame(header_frame, bg=self.colors["header"])
+        setup_frame.pack(side=tk.LEFT, padx=20, pady=20)
+
+        tk.Label(setup_frame, text="Branch:", font=("Segoe UI", 10, "bold"), fg="#bdc3c7", bg=self.colors["header"]).grid(row=0, column=0, sticky="w")
+        self.recon_branch = ttk.Combobox(setup_frame, values=self.db.get_store_names(), state="readonly", width=15)
+        self.recon_branch.current(0)
+        self.recon_branch.grid(row=0, column=1, padx=5)
+
+        tk.Label(setup_frame, text="Date:", font=("Segoe UI", 10, "bold"), fg="#bdc3c7", bg=self.colors["header"]).grid(row=1, column=0, sticky="w", pady=(5,0))
+        self.recon_date = DateEntry(setup_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.recon_date.grid(row=1, column=1, padx=5, pady=(5,0))
+
+        # --- THE NEW BUTTONS SECTION ---
+        btn_frame = tk.Frame(header_frame, bg=self.colors["header"])
+        btn_frame.pack(side=tk.LEFT, padx=30)
+
+        # Load Button
+        tk.Button(btn_frame, text="📥 Load Target", bg="#34495e", fg="white", relief="raised", font=("Segoe UI", 9, "bold"), width=12,
+                  command=self.load_daily_sales).pack(pady=2)
+
+        # NEW Save Button
+        tk.Button(btn_frame, text="💾 Save Target", bg="#27ae60", fg="white", relief="raised", font=("Segoe UI", 9, "bold"), width=12,
+                  command=self.save_daily_sales_target).pack(pady=2)
+
+
+        # Right Side: The Target Input
+        target_frame = tk.Frame(header_frame, bg=self.colors["header"])
+        target_frame.pack(side=tk.RIGHT, padx=30, pady=20)
+
+        tk.Label(target_frame, text="Expected Sales (LBP):", font=("Segoe UI", 14, "bold"), fg="#f1c40f", bg=self.colors["header"]).pack(anchor="e")
+        
+        self.target_entry = tk.Entry(target_frame, font=("Consolas", 18, "bold"), width=15, justify="right")
+        self.target_entry.pack(anchor="e", pady=(5,0))
+        
+        # Bind to recalculate
+        self.target_entry.bind("<KeyRelease>", self.recalc_sales_difference)
+
+        # --- Section 2: The Envelopes (The Count) ---
+        envelopes_container = tk.Frame(top, bg=self.colors["bg"])
+        envelopes_container.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # FIX 2: Create the dictionary that your logic is looking for
+        self.recon_inputs = {"env1": {}, "env2": {}}
+
+        def build_envelope_grid(parent, title, key):
+            frame = tk.LabelFrame(parent, text=title, font=("Segoe UI", 12, "bold"), bg="white", fg="#2c3e50", padx=15, pady=15)
+            frame.pack(side=tk.LEFT, fill="both", expand=True, padx=10)
+
+            tk.Label(frame, text="Currency", font=("Segoe UI", 9, "bold"), bg="white", fg="#7f8c8d").grid(row=0, column=0, sticky="w", pady=(0,10))
+            tk.Label(frame, text="Amount", font=("Segoe UI", 9, "bold"), bg="white", fg="#7f8c8d").grid(row=0, column=1, sticky="w", pady=(0,10))
+
+            rows = [
+                ("USD Cash", "usd_cash"),
+                ("USD Card", "usd_card"),
+                ("LBP Cash", "lbp_cash"),
+                ("LBP Card", "lbp_card")
+            ]
+
+            for i, (label_text, tag) in enumerate(rows):
+                tk.Label(frame, text=label_text, font=("Segoe UI", 11), bg="white").grid(row=i+1, column=0, pady=8, sticky="w")
+                
+                entry = tk.Entry(frame, font=("Segoe UI", 11), width=16, justify="right", bg="#f8f9fa", relief="solid", bd=1)
+                entry.grid(row=i+1, column=1, pady=8, padx=10)
+                
+                # FIX 3: Bind to the correct function name
+                entry.bind("<KeyRelease>", self.recalc_sales_difference)
+
+                # Store the widget so your logic can find it!
+                self.recon_inputs[key][tag] = entry
+
+        build_envelope_grid(envelopes_container, "✉️ Envelope 1", "env1")
+        build_envelope_grid(envelopes_container, "✉️ Envelope 2", "env2")
+
+        # --- Section 3: The Footer (Verdict & Action) ---
+        footer_frame = tk.Frame(top, bg="#ecf0f1", height=100)
+        footer_frame.pack(fill="x", side=tk.BOTTOM)
+
+        results_box = tk.Frame(footer_frame, bg="#ecf0f1")
+        results_box.pack(side=tk.LEFT, padx=40, pady=20)
+
+        self.lbl_total_counted = tk.Label(results_box, text="Total Counted: 0 LBP", font=("Segoe UI", 12), bg="#ecf0f1", fg="#7f8c8d")
+        self.lbl_total_counted.pack(anchor="w")
+
+        self.lbl_difference = tk.Label(results_box, text="Difference: 0 LBP", font=("Segoe UI", 16, "bold"), bg="#ecf0f1", fg="#2c3e50")
+        self.lbl_difference.pack(anchor="w")
+
+        actions_box = tk.Frame(footer_frame, bg="#ecf0f1")
+        actions_box.pack(side=tk.RIGHT, padx=40, pady=20)
+
+        self.apply_tax_var = tk.IntVar(value=1)
+        tk.Checkbutton(actions_box, text="Apply Main Taxes", variable=self.apply_tax_var, bg="#ecf0f1", font=("Segoe UI", 11)).pack(anchor="e", pady=(0,10))
+
+        # FIX 4: Bind button to 'submit_sale'
+        self.btn_recon_confirm = tk.Button(actions_box, text="CONFIRM & POST", bg="#95a5a6", fg="white", 
+                                           font=("Segoe UI", 11, "bold"), width=20, state="disabled",
+                                           command=self.submit_sale)
+        self.btn_recon_confirm.pack(anchor="e")
+
+    def load_daily_sales(self):
+        branch_name = self.recon_branch.get()
+        date = self.recon_date.get()
+
+        amount = self.db.get_daily_sale(branch_name, date)
+
+        self.target_entry.delete(0, tk.END)
+
+        if amount > 0:
+            self.target_entry.insert(0, f"{amount:.0f}")
+        
+        self.recalc_sales_difference()
+
+    def save_daily_sales_target(self):
+        branch = self.recon_branch.get()
+        date = self.recon_date.get()
+        
+        try:
+            val_str = self.target_entry.get().replace(",", "")
+            if not val_str:
+                messagebox.showwarning("Warning", "Please enter a target amount first.")
+                return
+                
+            amount = float(val_str)
+            
+            self.db.save_daily_sale(branch, date, amount)
+            
+            messagebox.showinfo("Saved", f"Target of {amount:,.0f} LBP saved for {branch} on {date}.")
+
+            self.recalc_sales_difference()
+            
+        except ValueError:
+            messagebox.showerror("Error", "Invalid Number")
+
+    def recalc_sales_difference(self, event=None):
+        def get_val(entry_widget):
+            try:
+                val = entry_widget.get()
+                if not val: return 0.0
+                return float(val.replace(",", ""))
+            except ValueError:
+                return 0.0
+
+        real_amount = get_val(self.target_entry)
+
+        entered_amount = 0
+        rate = self.db.get_rate("exchange_rate")
+
+        for i in range(1,3):
+            usd_cash = get_val(self.recon_inputs[f"env{i}"]["usd_cash"])
+            LBP_cash = get_val(self.recon_inputs[f"env{i}"]["lbp_cash"])
+            usd_card = get_val(self.recon_inputs[f"env{i}"]["usd_card"])
+            LBP_card = get_val(self.recon_inputs[f"env{i}"]["lbp_card"])
+            total_env = LBP_cash + LBP_card + ((usd_cash + usd_card) * rate)
+            entered_amount += total_env
+
+        self.lbl_total_counted.config(text=f"Total Counted: {entered_amount:,.0f} L.L")
+
+        difference = real_amount - entered_amount
+
+        self.lbl_difference.config(text=f"Difference: {difference:,.0f} L.L")
+
+        if abs(difference) < 100000:
+            self.lbl_difference.config(fg="#27ae60")
+            self.btn_recon_confirm.config(state="normal", bg="#27ae60")
+        else :
+            self.lbl_difference.config(fg="#c0392b")
+            self.btn_recon_confirm.config(state="normal", bg="#c0392b")
+
+    def submit_sale(self):
+        branch = self.recon_branch.get()
+        date = self.recon_date.get()
+        
+        try:
+            target_val = float(self.target_entry.get().replace(",", ""))
+            self.db.save_daily_sale(branch, date, target_val)
+        except ValueError:
+            pass
+
+        diff_text = self.lbl_difference.cget("text")
+        if "Difference: 0" not in diff_text and "Difference: -0" not in diff_text:
+             if not messagebox.askyesno("Discrepancy Warning", f"The totals do not match the target.\n\n{diff_text}\n\nSubmit anyway?"):
+                 return
+
+        saved_count = 0
+        
+        main_rate = self.db.get_rate("main_rate")
+        tva_rate = self.db.get_rate("tva_rate")
+        comm_rate = self.db.get_rate("comm_rate")
+        apply_main = self.apply_tax_var.get()
+
+        money_types = [
+            ("usd_cash", "USD ($)", "Cash"),
+            ("usd_card", "USD ($)", "Card"),
+            ("lbp_cash", "Lira (LBP)", "Cash"),
+            ("lbp_card", "Lira (LBP)", "Card")
+        ]
+
+        for i in range(1, 3):
+            env_key = f"env{i}"
+            
+            for key, curr, method in money_types:
+                try:
+                    widget = self.recon_inputs[env_key][key]
+                    val_str = widget.get().replace(",", "")
+                    
+                    if not val_str: continue
+                    
+                    amount = float(val_str)
+                    if amount <= 0: continue
+
+
+                    main_id = self.db.add_transactions(branch, date, "Income", "Sales", amount, curr, method)
+                    
+                    val_tva = round(amount * (tva_rate / 100), 2)
+                    self.db.add_transactions(branch, date, "Expense", f"TVA ({tva_rate:g}%)", val_tva, curr, method, parent_id=main_id)
+                    self.db.add_transactions("TVA Account", date, "Income", f"from {branch}", val_tva, curr, method, parent_id=main_id)
+
+                    if apply_main == 1:
+                        val_main = round(amount * (main_rate / 100), 2)
+                        self.db.add_transactions(branch, date, "Expense", f"Main ({main_rate:g}%)", val_main, curr, method, parent_id=main_id)
+                        self.db.add_transactions("Main Vault", date, "Income", f"from {branch}", val_main, curr, method, parent_id=main_id)
+
+                    if method == "Card":
+                        val_comm = round(amount * (comm_rate / 100), 2)
+                        self.db.add_transactions(branch, date, "Expense", f"Card Commission ({comm_rate:g}%)", val_comm, curr, method, parent_id=main_id)
+                        self.db.add_transactions("Bank Commission", date, "Income", f"from {branch}", val_comm, curr, method, parent_id=main_id)
+
+                    saved_count += 1
+
+                except ValueError:
+                    continue
+
+        if saved_count > 0:
+            messagebox.showinfo("Success", f"Posted {saved_count} sales records!")
+            self.view_records()
+        else:
+            messagebox.showwarning("Warning", "No amounts were entered.")
+
+
+
     def toggle_category_state(self, event=None):
         current_type = self.type_combo.get()
         current_store = self.store_combo.get()
 
         if current_type == "Income":
-            self.cat_combo.set("Cash Flow")
-            self.cat_combo.config(state="disabled")
+            self.cat_combo.config(state="readonly")
+            self.cat_combo['values'] = ["Sales", "Investment"]
+            self.cat_combo.current(0)
         else:
             if current_store in self.system_accounts:
 
@@ -841,7 +1236,10 @@ class StoreApp:
                 self.db.add_transactions(store, today, "Expense", "Freight", amt_freight, cur, paym, parent_id = main_id)
                 self.db.add_transactions("Freight", today, "Income", f"from {store}", amt_freight, cur, paym, parent_id = main_id)
 
-            if t_type == "Income":
+            if cat == "Main" and t_type == "Expense" :
+                self.db.add_transactions("Main Vault", today, "Income", f"from {store}", val, cur, paym, parent_id = main_id)
+
+            if t_type == "Income" and cat == "Sales":
                 main_rate = self.db.get_rate("main_rate")
                 tva_rate = self.db.get_rate("tva_rate")
                 card_rate = self.db.get_rate("comm_rate")
@@ -873,6 +1271,7 @@ class StoreApp:
             self.view_records()
         except ValueError:
             messagebox.showerror("Error", "Amount must be a number")
+
     
     #Important for tree display, and filters
     def view_records(self):
@@ -929,6 +1328,9 @@ class StoreApp:
                 if f_cat == "Exchange In/Out":
                     allowed_categories = ["Exchange In", "Exchange Out"]
 
+                if f_cat == "Bank Transfer In/Out":
+                    allowed_categories = ["Bank Transfer Out", "Bank Transfer In"]
+
                 elif store_name in self.system_accounts:
                     allowed_categories = [f_cat, f"from {f_cat}"]
 
@@ -975,12 +1377,14 @@ class StoreApp:
         report = f"USD Cash: ${total_usd_cash:,.2f} | USD Card ${total_usd_card:,.2f}\n LBP Cash: {total_lbp_cash:,.0f} L.L | LBP Card: {total_lbp_card:,.0f} L.L"
         self.status_label.config(text=report, font=("Consolas", 12, "bold"), justify=tk.LEFT)
 
-        
+
     def update_filter_dropdown(self, event=None):
         current_store = self.store_combo.get()
         f_type = self.filter_type.get()
 
         new_values = ["All"]
+
+        extra_filters = ["Exchange In/Out", "Bank Transfer In/Out"]
 
         if current_store in self.system_accounts:
             if f_type == "Income":
@@ -1010,11 +1414,11 @@ class StoreApp:
         else :
             self.filter_cat.config(state="readonly")
             if f_type == "Income":
-                new_values += ["Cash Flow"]
+                new_values += ["Sales", "Investment"] + extra_filters
             elif f_type == "Expense":
-                new_values += self.category_list
+                new_values += self.category_list + extra_filters
             else:
-                new_values += self.category_list + ["Cash Flow"]
+                new_values += self.category_list + ["Sales", "Investment"] + extra_filters
 
         self.filter_cat['values'] = new_values
         self.filter_cat.current(0)
