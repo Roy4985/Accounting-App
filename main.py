@@ -404,7 +404,7 @@ class StoreApp:
 
         tk.Label(filter_frame, text="Filter Type:", bg=self.colors["bg"]).grid(row=0, column=0, padx=5, pady=10)
         self.filter_type_var = tk.StringVar()
-        self.filter_type = ttk.Combobox(filter_frame, textvariable="self.filter_type_var", values=["All", "Income", "Expense"], state="readonly", width=10)
+        self.filter_type = ttk.Combobox(filter_frame, textvariable=self.filter_type_var, values=["All", "Income", "Expense"], state="readonly", width=10)
         self.filter_type.current(0)
         self.filter_type.grid(row=0, column=1, padx=5)
         self.filter_type.bind("<<ComboboxSelected>>", self.update_filter_dropdown)
@@ -412,20 +412,20 @@ class StoreApp:
         tk.Label(filter_frame, text="Filter Category:", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=10)
         full_cat_list = ["All", "Sales", "Investment", "Exchange In/Out", "Bank Transfer In/Out"] + self.category_list
         self.filter_cat_var = tk.StringVar()
-        self.filter_cat = ttk.Combobox(filter_frame, textvariable="self.filter_cat_var", values= full_cat_list, state="readonly", width=15)
+        self.filter_cat = ttk.Combobox(filter_frame, textvariable=self.filter_cat_var, values= full_cat_list, state="readonly", width=15)
         self.filter_cat.current(0)
         self.filter_cat.grid(row=0, column=3, padx=5)
 
         tk.Label(filter_frame, text="Currency:", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5)
         self.filter_curr_var = tk.StringVar()
-        self.filter_curr = ttk.Combobox(filter_frame, textvariable="self.filter_curr_var", values= ["All", "USD ($)", "Lira (LBP)"], state="readonly", width=10)
+        self.filter_curr = ttk.Combobox(filter_frame, textvariable=self.filter_curr_var, values= ["All", "USD ($)", "Lira (LBP)"], state="readonly", width=10)
         self.filter_curr.current(0)
         self.filter_curr.grid(row=1, column=1, padx=5)
         self.filter_curr.bind("<<ComboboxSelected>>", lambda e: self.view_records())
 
         tk.Label(filter_frame, text="Method:", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5)
         self.filter_paym_var = tk.StringVar()
-        self.filter_paym = ttk.Combobox(filter_frame, textvariable="self.filter_paym_var", values= ["All", "Cash", "Card"], state="readonly", width=15)
+        self.filter_paym = ttk.Combobox(filter_frame, textvariable=self.filter_paym_var, values= ["All", "Cash", "Card"], state="readonly", width=15)
         self.filter_paym.current(0)
         self.filter_paym.grid(row=1, column=3, padx=5)
         self.filter_paym.bind("<<ComboboxSelected>>", lambda e: self.view_records())
