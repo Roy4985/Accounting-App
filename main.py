@@ -1,9 +1,16 @@
 import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+import customtkinter as ctk
 from datetime import datetime
 import csv
 from tkcalendar import DateEntry
+import os
+import shutil
+
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("blue")
+
 
 #This class is for everything database related
 class DatabaseManager:
@@ -231,23 +238,29 @@ class StoreApp:
         except:
             pass
 
-        self.root.state("zoomed")
-        self.root.geometry("900x600")
+        self.root.geometry("1200x800")
+        def maximize_window():
+            try:
+                self.root.state("zoomed") 
+            except Exception:
+                pass
+
+        self.root.after(100, maximize_window)
 
         self.db = DatabaseManager()
+        self.auto_backup()
 
         #Color dictionnary
         self.colors = {
-            "bg": "#f0f2f5",         
-            "header": "#2c3e50",      
+            "bg": "#242424",           
+            "header": "#1a1a1a",       
+            "card": "#333333",         
             "text": "#ffffff",        
-            "accent": "#2980b9",     
-            "success": "#27ae60",    
+            "accent": "#1f538d",      
+            "success": "#2cc985",      
             "danger": "#c0392b",      
             "white": "#ffffff"
         }
-
-        self.root.configure(bg=self.colors["bg"])
 
         self.setup_styles()
 
@@ -288,222 +301,231 @@ class StoreApp:
         self.view_records()
         self.toggle_category_state()
 
+    def auto_backup(self):
+            backup_dir = "backups"
+            os.makedirs(backup_dir, exist_ok=True)
+
+            today = datetime.now().strftime('%Y-%m-%d')
+            backup_file = os.path.join(backup_dir, f"backup_{today}.db")
+
+            if not os.path.exists(backup_file) and os.path.exists("store.db"):
+                try:
+                    shutil.copy("store.db",backup_file)
+                    print(f"Auto Backup created for {today}")
+                except Exception as e:
+                    print(f"Auto-backup failed: {e}")
+
     def setup_header(self):
         #the frame for the header
-        header_frame = tk.Frame(self.root,bg =self.colors["header"], height=60)
+        header_frame = ctk.CTkFrame(self.root, fg_color=self.colors["header"], height=70, corner_radius=0)
         header_frame.pack(fill="x")
 
         #Now the Title on top of the page
-        title_label = tk.Label(header_frame, text="Select Branch", bg=self.colors["header"], font=("Segoe UI", 18, "bold"), fg="white")
-        title_label.pack(side=tk.LEFT, padx=20, pady=10)
+        title_label = ctk.CTkLabel(header_frame, text="Select Branch", text_color = "white", font=("Roboto Medium", 24))
+        title_label.pack(side=tk.LEFT, padx=30, pady=15)
 
-        settings_btn = tk.Button(header_frame, text="⚙ Settings", bg=self.colors["accent"], fg="white", 
-                                 font=("Segoe UI", 10, "bold"), relief="raised", bd=1, activebackground="#3498db", cursor="hand2",
+        settings_btn = ctk.CTkButton(header_frame, text="⚙ Settings", width=120, height=35, fg_color="transparent", 
+                                     border_width=2, border_color="#3e3e3e", hover_color="#3e3e3e", 
+                                     font=("Segoe UI", 11, "bold"),cursor="hand2",
                                  command=self.open_settings_window)
-        settings_btn.pack(side=tk.RIGHT, padx=20, pady=10)
+        settings_btn.pack(side=tk.RIGHT, padx=20)
 
-        balance_btn = tk.Button(header_frame, text="📊 Balances", bg="#8e44ad", fg="white", 
-                                 font=("Segoe UI", 10, "bold"), relief="raised", bd=1, cursor="hand2",
+        balance_btn = ctk.CTkButton(header_frame, text="📊 Balances", width=120, height=35, fg_color="#8e44ad", 
+                                 font=("Segoe UI", 11, "bold"), hover_color="#9b59b6",cursor="hand2",
                                  command=self.open_balances_window)
-        balance_btn.pack(side=tk.RIGHT, padx=5, pady=10)
+        balance_btn.pack(side=tk.RIGHT, padx=5)
 
-        recon_btn = tk.Button(header_frame, text="📅 Daily Recon", bg="#e67e22", fg="white", 
-                                 font=("Segoe UI", 10, "bold"), relief="raised", bd=1, cursor="hand2",
+        recon_btn = ctk.CTkButton(header_frame, text="📅 Daily Recon", width=120, height=35, fg_color="#e67e22", hover_color="#d35400", 
+                                 font=("Segoe UI", 11, "bold"), cursor="hand2",
                                  command=self.open_daily_reconciliation_window)
-        recon_btn.pack(side=tk.RIGHT, padx=5, pady=10)
+        recon_btn.pack(side=tk.RIGHT, padx=5)
 
         all_stores = self.db.get_store_names()
 
         #Now under it we want to branch dropdown menu
-        self.store_var = tk.StringVar()
-        self.store_combo = ttk.Combobox(header_frame, textvariable=self.store_var, values=all_stores, state="readonly")
+        self.store_var = ctk.StringVar(value=all_stores[0])
+        self.store_combo = ctk.CTkComboBox(header_frame, width=200, height=35, variable=self.store_var, values=all_stores, state="readonly", command=self.on_branch_change)
 
-        self.store_combo.current(0)
-        self.store_combo.pack(side=tk.RIGHT, padx=20, pady=10)
+        self.store_combo.pack(side=tk.RIGHT, padx=20)
 
-        def on_branch_change(event):
-            self.toggle_category_state()
-            self.update_filter_dropdown()
+    def on_branch_change(self, choice):
+        self.toggle_category_state()
+        self.update_filter_dropdown()
 
-            try:
-                self.no_main_var.set(0)
-            except AttributeError:
-                pass
+        try:
+            self.no_main_var.set(0)
+        except AttributeError:
+            pass
 
-        self.store_combo.bind("<<ComboboxSelected>>", on_branch_change)
 
     def setup_inputs(self):
-        master_frame = tk.Frame(self.root, bg=self.colors["bg"])
+        master_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         master_frame.pack(fill="x", padx=20, pady=15)
 
         #Input side 
-        input_frame = tk.LabelFrame(master_frame, text="New Transaction")
+        input_frame = ctk.CTkFrame(master_frame, fg_color=self.colors["card"], corner_radius=15)
         input_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=(0,10))
 
-        tk.Label(input_frame, text="Date", bg=self.colors["bg"]).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.date_entry = DateEntry(input_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
-        self.date_entry.grid(row=0, column=1, padx=5, pady=5)
+        ctk.CTkLabel(input_frame, text="New Transaction", font=("Roboto Medium", 16), text_color="#bdc3c7").grid(row=0, column=0,columnspan=6, pady=(15, 15),sticky="w",padx=15)
 
-        tk.Label(input_frame, text="Type", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=5, sticky="w")
-        self.type_var = tk.StringVar()
-        self.type_combo = ttk.Combobox(input_frame, textvariable=self.type_var, values=["Income","Expense"], state="readonly", width=12)
-        self.type_combo.current(0)
-        self.type_combo.grid(row=0, column=3, padx=5, pady=5)
+        # --- Row 1: date | Type | Category ---
+        ctk.CTkLabel(input_frame, text="Date").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.date_entry = DateEntry(input_frame, width=12, background="#1f538d", foreground='white', borderwidth=0, font=("Segoe UI", 12), date_pattern='yyyy-mm-dd')
+        self.date_entry.grid(row=1, column=1, padx=10, pady=5, ipady=5)
 
-        self.type_combo.bind("<<ComboboxSelected>>", self.toggle_category_state)
+        ctk.CTkLabel(input_frame, text="Type").grid(row=1, column=2, padx=10, pady=5, sticky="w")
+        self.type_var = ctk.StringVar(value="Income")
+        self.type_combo = ctk.CTkComboBox(input_frame, variable=self.type_var, values=["Income","Expense"], width=120, state="readonly", command=self.toggle_category_state)
+        self.type_combo.grid(row=1, column=3, padx=10, pady=5)
 
-        tk.Label(input_frame, text="Category", bg=self.colors["bg"]).grid(row=0, column=4, padx=5, pady=5, sticky="w")
-        self.cat_var = tk.StringVar()
-        self.cat_combo = ttk.Combobox(input_frame, textvariable=self.cat_var, values=self.category_list, state = "readonly", width=15)
-        self.cat_combo.current(0)
-        self.cat_combo.grid(row=0, column=5, padx=5, pady=5)
+        ctk.CTkLabel(input_frame, text="Category").grid(row=1, column=4, padx=10, pady=5, sticky="w")
+        self.cat_var = ctk.StringVar(value=self.category_list[0])
+        self.cat_combo = ctk.CTkComboBox(input_frame, variable=self.cat_var, values=self.category_list, state="readonly", width=160)
+        self.cat_combo.grid(row=1, column=5, padx=10, pady=5)
 
-        tk.Label(input_frame, text="Amount ($)", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        self.amount_entry = tk.Entry(input_frame, width=15)
-        self.amount_entry.grid(row=1, column=1, padx=5, pady=5)
-
+        # --- Row 2: Amount | Currency | Method ---
+        ctk.CTkLabel(input_frame, text="Amount").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.amount_entry = ctk.CTkEntry(input_frame, width=120, placeholder_text="0.00")
+        self.amount_entry.grid(row=2, column=1, padx=10, pady=5)
         self.amount_entry.bind('<Return>', lambda event: self.add_records())
 
-        tk.Label(input_frame, text="Currency", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5, sticky="w")
-        self.currency_var = tk.StringVar()
-        self.cur_combo = ttk.Combobox(input_frame, textvariable=self.currency_var, values=["USD ($)", "Lira (LBP)"], state="readonly", width=12)
-        self.cur_combo.current(0)
-        self.cur_combo.grid(row=1, column=3, padx=5, pady=5)
+        ctk.CTkLabel(input_frame, text="Currency").grid(row=2, column=2, padx=10, pady=5, sticky="w")
+        self.currency_var = ctk.StringVar(value="USD ($)")
+        self.cur_combo = ctk.CTkComboBox(input_frame, variable=self.currency_var, values=["USD ($)", "Lira (LBP)"], state="readonly", width=120)
+        self.cur_combo.grid(row=2, column=3, padx=10, pady=5)
 
-        tk.Label(input_frame, text="Payment Method", bg=self.colors["bg"]).grid(row=1, column=4, padx=5, pady=5, sticky="w")
-        self.paym_var = tk.StringVar()
-        self.paym_combo = ttk.Combobox(input_frame, textvariable=self.paym_var, values=["Cash", "Card"], state="readonly", width=12)
-        self.paym_combo.current(0)
-        self.paym_combo.grid(row=1, column=5, padx=5, pady=5) 
+        ctk.CTkLabel(input_frame, text="Payment Method").grid(row=2, column=4, padx=10, pady=5, sticky="w")
+        self.paym_var = ctk.StringVar(value="Cash")
+        self.paym_combo = ctk.CTkComboBox(input_frame, variable=self.paym_var, values=["Cash", "Card"], state="readonly", width=120)
+        self.paym_combo.grid(row=2, column=5, padx=10, pady=5) 
 
-        tk.Label(input_frame, text="Description (Opt):", bg=self.colors["bg"]).grid(row=2, column=0, padx=5, pady=5, sticky="w")
-        self.desc_entry = tk.Entry(input_frame, width=35)
-        self.desc_entry.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="w")
+        # --- Row 3: Description | Checkbox ---
+        ctk.CTkLabel(input_frame, text="Description (Opt):").grid(row=3, column=0, padx=10, pady=5, sticky="w")
+        self.desc_entry = ctk.CTkEntry(input_frame, width=300, placeholder_text="Details...")
+        self.desc_entry.grid(row=3, column=1, columnspan=3, padx=10, pady=5, sticky="w")
 
-        self.no_main_var = tk.IntVar()
-        no_main_chk = tk.Checkbutton(input_frame, text="Skip Main", variable=self.no_main_var, bg=self.colors["bg"], activebackground=self.colors["bg"])
-        no_main_chk.grid(row=2, column=4, columnspan=2, sticky="w", padx=5)
+        self.no_main_var = ctk.IntVar(value=0)
+        no_main_chk = ctk.CTkCheckBox(input_frame, text="Skip Main Tax", variable=self.no_main_var, border_width=2, checkbox_width=20, checkbox_height=20)
+        no_main_chk.grid(row=3, column=4, columnspan=2, sticky="w", padx=10, pady=5)
 
-        #Input buttons section
-        input_btn_frame = tk.Frame(input_frame, background=self.colors["bg"])
-        input_btn_frame.grid(row=3, column=0, columnspan=6, pady=15, sticky="ew")
+        # --- Row 4: Buttons ---
+        input_btn_frame = ctk.CTkFrame(input_frame, fg_color="transparent")
+        input_btn_frame.grid(row=4, column=0, columnspan=6, pady=20, sticky="ew")
 
         # To give both buttons equal sapce
         input_btn_frame.columnconfigure(0, weight=1)
         input_btn_frame.columnconfigure(1, weight=1)
 
-        add_btn = tk.Button(input_btn_frame, text="+ Add Record", bg=self.colors["success"], fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", relief="flat",command=self.add_records)
-        add_btn.grid(row=0, column=0, sticky="ew", padx=(10, 5), ipady=5)
+        add_btn = ctk.CTkButton(input_btn_frame, text="+ ADD RECORD", height=40, fg_color=self.colors["success"], hover_color="#27ae60", font=("Segoe UI", 12, "bold"), cursor="hand2", command=self.add_records)
+        add_btn.grid(row=0, column=0, sticky="ew", padx=10)
 
-        exchange_btn = tk.Button(input_btn_frame, text="Exchange", font=("Segoe UI", 10, "bold"), bg="#e67e22", fg="white", cursor="hand2", relief="flat",command=self.open_exchange_window)
-        exchange_btn.grid(row=0, column=1, sticky="ew", padx=(5, 10), ipady=5)
+        exchange_btn = ctk.CTkButton(input_btn_frame, text="Exchange", height=40, fg_color="#e67e22", hover_color="#d35400", font=("Segoe UI", 12 , "bold"), cursor="hand2",  command= self.open_exchange_window)
+        exchange_btn.grid(row=0, column=1, sticky="ew", padx=10)
 
-        #filter side
-        filter_frame = ttk.LabelFrame(master_frame, text="Filters")
+        # --- FILTER SIDE ---
+        filter_frame = ctk.CTkFrame(master_frame, fg_color=self.colors["card"], corner_radius=15)
         filter_frame.pack(side=tk.RIGHT, fill="both", expand=True, padx=(10,0))
 
-        tk.Label(filter_frame, text="Filter Type:", bg=self.colors["bg"]).grid(row=0, column=0, padx=5, pady=10)
-        self.filter_type_var = tk.StringVar()
-        self.filter_type = ttk.Combobox(filter_frame, textvariable=self.filter_type_var, values=["All", "Income", "Expense"], state="readonly", width=10)
-        self.filter_type.current(0)
-        self.filter_type.grid(row=0, column=1, padx=5)
-        self.filter_type.bind("<<ComboboxSelected>>", self.update_filter_dropdown)
+        ctk.CTkLabel(filter_frame, text="Filters", font=("Roboto Medium", 16), text_color="#bdc3c7").grid(row=0, column=0, columnspan=4, pady=(15,15), sticky="w", padx=15)
 
-        tk.Label(filter_frame, text="Filter Category:", bg=self.colors["bg"]).grid(row=0, column=2, padx=5, pady=10)
+        # --- Row 1: Type & Category ---
+        ctk.CTkLabel(filter_frame, text="Filter Type:").grid(row=1, column=0, padx=10, pady=5)
+        self.filter_type_var = ctk.StringVar(value="All")
+        self.filter_type = ctk.CTkComboBox(filter_frame, variable=self.filter_type_var, values=["All", "Income", "Expense"], width=100, state="readonly", command=self.update_filter_dropdown)
+        self.filter_type.grid(row=1, column=1, padx=5, pady=5)
+
+        ctk.CTkLabel(filter_frame, text="Filter Category:").grid(row=1, column=2, padx=10, pady=5)
         full_cat_list = ["All", "Sales", "Investment", "Exchange In/Out", "Bank Transfer In/Out"] + self.category_list
-        self.filter_cat_var = tk.StringVar()
-        self.filter_cat = ttk.Combobox(filter_frame, textvariable=self.filter_cat_var, values= full_cat_list, state="readonly", width=15)
-        self.filter_cat.current(0)
-        self.filter_cat.grid(row=0, column=3, padx=5)
+        self.filter_cat_var = ctk.StringVar(value="All")
+        self.filter_cat = ctk.CTkComboBox(filter_frame, variable=self.filter_cat_var, values= full_cat_list, width=140, state="readonly", command=lambda e: self.view_records())
+        self.filter_cat.grid(row=1, column=3, padx=5, pady=5)
 
-        tk.Label(filter_frame, text="Currency:", bg=self.colors["bg"]).grid(row=1, column=0, padx=5, pady=5)
-        self.filter_curr_var = tk.StringVar()
-        self.filter_curr = ttk.Combobox(filter_frame, textvariable=self.filter_curr_var, values= ["All", "USD ($)", "Lira (LBP)"], state="readonly", width=10)
-        self.filter_curr.current(0)
-        self.filter_curr.grid(row=1, column=1, padx=5)
-        self.filter_curr.bind("<<ComboboxSelected>>", lambda e: self.view_records())
+        # --- Row 2: Currency | Method ---
+        ctk.CTkLabel(filter_frame, text="Currency:").grid(row=2, column=0, padx=10, pady=5)
+        self.filter_curr_var = ctk.StringVar(value="All")
+        self.filter_curr = ctk.CTkComboBox(filter_frame, variable=self.filter_curr_var, values= ["All", "USD ($)", "Lira (LBP)"], width=100, state="readonly", command=lambda e: self.view_records())
+        self.filter_curr.grid(row=2, column=1, padx=5, pady=5)
 
-        tk.Label(filter_frame, text="Method:", bg=self.colors["bg"]).grid(row=1, column=2, padx=5, pady=5)
-        self.filter_paym_var = tk.StringVar()
-        self.filter_paym = ttk.Combobox(filter_frame, textvariable=self.filter_paym_var, values= ["All", "Cash", "Card"], state="readonly", width=15)
-        self.filter_paym.current(0)
-        self.filter_paym.grid(row=1, column=3, padx=5)
-        self.filter_paym.bind("<<ComboboxSelected>>", lambda e: self.view_records())
-
-        tk.Label(filter_frame, text="From:", bg=self.colors["bg"]).grid(row=2, column=0, padx=5, pady=5)
-        self.date_from = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        ctk.CTkLabel(filter_frame, text="Method:").grid(row=2, column=2, padx=10, pady=5)
+        self.filter_paym_var = ctk.StringVar(value="All")
+        self.filter_paym = ctk.CTkComboBox(filter_frame, variable=self.filter_paym_var, values= ["All", "Cash", "Card"], width=140, state="readonly", command=lambda e: self.view_records())
+        self.filter_paym.grid(row=2, column=3, padx=5, pady=5)
+        
+        # --- Row 3: Dates ---
+        ctk.CTkLabel(filter_frame, text="From:").grid(row=3, column=0, padx=10, pady=5)
+        self.date_from = DateEntry(filter_frame, width=12, background="#2c3e50", foreground='white', borderwidth=0, font=("Segoe UI", 12), date_pattern='yyyy-mm-dd')
         self.date_from.delete(0, "end")
-        self.date_from.grid(row=2, column=1, padx=5)
+        self.date_from.grid(row=3, column=1, padx=5, pady=5, ipady=3)
 
-        tk.Label(filter_frame, text="To:", bg=self.colors["bg"]).grid(row=2, column=2, padx=5, pady=5)
-        self.date_to = DateEntry(filter_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        ctk.CTkLabel(filter_frame, text="To:").grid(row=3, column=2, padx=10, pady=5)
+        self.date_to = DateEntry(filter_frame, width=12, background="#2c3e50", foreground='white', borderwidth=0, font=("Segoe UI", 12), date_pattern='yyyy-mm-dd')
         self.date_to.delete(0, "end")
-        self.date_to.grid(row=2, column=3, padx=5)
+        self.date_to.grid(row=3, column=3, padx=5, pady=5, ipady=3)
 
-        #filter Buttons section
-        filter_btn_frame = tk.Frame(filter_frame, )
-        filter_btn_frame.grid(row=3, column=0, columnspan=4, pady=10)
+        # --- Row 5: Buttons ---
+        filter_btn_frame = ctk.CTkFrame(filter_frame, fg_color="transparent")
+        filter_btn_frame.grid(row=4, column=0, columnspan=4, pady=20)
 
-        tk.Button(filter_btn_frame, text="Apply Filter", bg="#2c3e50", fg="white", command=self.view_records).pack(side=tk.LEFT, padx=5)
-        tk.Button(filter_btn_frame, text="Reset", command = self.reset_filters).pack(side=tk.LEFT, padx=5)
-
-        self.filter_cat.bind("<<ComboboxSelected>>", lambda e: self.view_records())
+        ctk.CTkButton(filter_btn_frame, text="Apply Filter", width=80, cursor="hand2", command=self.view_records).pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(filter_btn_frame, text="Reset", width=80, fg_color="transparent", border_width=1, cursor="hand2", command = self.reset_filters).pack(side=tk.LEFT, padx=5)
 
 
     def setup_table(self):
-        main_content = tk.Frame(self.root, bg=self.colors["bg"])
+        main_content = ctk.CTkFrame(self.root, fg_color="transparent")
         main_content.pack(fill="both", expand=True, padx=20, pady=(0,20))
 
 
-        tree_frame = tk.Frame(main_content)
+        tree_frame = ctk.CTkFrame(main_content)
         tree_frame.pack(fill="both", expand=True)
 
         cols = ("ID", "Date", "Type", "Category", "Amount", "Currency", "Payment Method", "Description")
 
         visible_cols = ("Date", "Type", "Category", "Amount", "Currency", "Payment Method", "Description")
 
-        self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings", displaycolumns=visible_cols)
+        self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings", displaycolumns=visible_cols, selectmode="browse")
 
-        self.tree.column("Date", width=90, anchor=tk.CENTER)
-        self.tree.column("Type", width=70, anchor=tk.CENTER)
-        self.tree.column("Category", width=130, anchor=tk.W)
-        self.tree.column("Description", width=200, anchor=tk.W)
-        self.tree.column("Amount", width=90, anchor=tk.E)  
-        self.tree.column("Currency", width=70, anchor=tk.CENTER)
-        self.tree.column("Payment Method", width=80, anchor=tk.CENTER)
+        self.tree.column("Date", width=100, anchor="center")
+        self.tree.column("Type", width=80, anchor="center")
+        self.tree.column("Category", width=150, anchor="w")
+        self.tree.column("Description", width=250, anchor="w")
+        self.tree.column("Amount", width=100, anchor="e")  
+        self.tree.column("Currency", width=80, anchor="center")
+        self.tree.column("Payment Method", width=100, anchor="center")
         
 
         for col in visible_cols:
             self.tree.heading(col, text=col)
 
-        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        scrollbar = ctk.CTkScrollbar(tree_frame, orientation="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
 
-        scrollbar.pack(side=tk.RIGHT, fill="y")
+        scrollbar.pack(side="right", fill="y")
         
-        self.tree.pack(fill="both", expand=True)
+        self.tree.pack(side="left", fill="both", expand=True)
 
         self.tree.bind('<Delete>', lambda event: self.delete_record())
+        self.tree.bind("<Button-3>", self.show_context_menu)
 
 
-        bottom_frame = tk.Frame(main_content, bg=self.colors["bg"])
+        bottom_frame = ctk.CTkFrame(main_content, fg_color="transparent")
         bottom_frame.pack(fill="x", pady=10)
 
-        export_btn = tk.Button(bottom_frame, text="Export to Excel", bg=self.colors["accent"], fg="white", command=self.export_to_excel)
-        export_btn.pack(side=tk.LEFT, padx=5)
+        export_btn = ctk.CTkButton(bottom_frame, text="Export to Excel", fg_color=self.colors["accent"], hover_color="#154360", font=("Segoe UI", 12, "bold"), height=35, cursor="hand2", command=self.export_to_excel)
+        export_btn.pack(side="left")
 
         #He placeholder ma bt bayyin b bayyin mahala l hateto b show records and __init__ he bas just to be safe
-        self.status_label = tk.Label(bottom_frame, text="Loading...", font=("Segoe UI", 12, "bold"), bg=self.colors["bg"], justify=tk.RIGHT)
-        self.status_label.pack(side=tk.RIGHT)
+        self.status_label = ctk.CTkLabel(bottom_frame, text="Loading...", font=("Consolas", 12, "bold"), text_color="#bdc3c7")
+        self.status_label.pack(side="right")
+
+        self.grand_total_label = ctk.CTkLabel(bottom_frame, text="Total: $0.00", font=("Consolas", 16, "bold"), text_color="#2cc985")
+        self.grand_total_label.pack(side="right", padx=20)
 
         #Right click menu part 
-        self.context_menu = tk.Menu(self.root, tearoff=0)
+        self.context_menu = tk.Menu(self.root, tearoff=0, bg="#2b2b2b", fg="white", activebackground=self.colors["accent"], activeforeground="white")
 
         self.context_menu.add_command(label="Edit Record", command=self.open_edit_window)
-
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Delete Record", command=self.delete_record)
-        self.tree.bind("<Button-3>", self.show_context_menu)
 
     def show_context_menu(self, event):
         try:
@@ -546,14 +568,22 @@ class StoreApp:
         old_paym = record[8]
         old_desc = record[9] if record[9] else ""
 
-        edit_win = tk.Toplevel(self.root)
+        edit_win = ctk.CTkToplevel(self.root)
         edit_win.title("Edit Record")
-        edit_win.geometry("300x400")
+        edit_win.geometry("350x500")
+        edit_win.grab_set()
+        edit_win.focus()
 
-        tk.Label(edit_win, text="Date:").pack(pady=5)
-        date_entry = DateEntry(edit_win, width=12, date_pattern='yyyy-mm-dd')
+        ctk.CTkLabel(edit_win, text="Edit Transaction", font=("Roboto Medium", 18), text_color=self.colors["accent"]).pack(pady=(20, 10))
+
+        # --- Card Container ---
+        card = ctk.CTkFrame(edit_win, fg_color=self.colors["card"], corner_radius=10)
+        card.pack(padx=20, pady=10, fill="both", expand=True)
+
+        ctk.CTkLabel(card, text="Date:", font=("Segoe UI", 12)).pack(pady=(15, 0))
+        date_entry = DateEntry(card, width=15, background="#1f538d", foreground="white", borderwidth=0, date_pattern='yyyy-mm-dd')
         date_entry.set_date(old_date)
-        date_entry.pack()
+        date_entry.pack(pady=(5, 10))
 
         valid_categories = []
         store = self.store_combo.get()
@@ -565,25 +595,25 @@ class StoreApp:
             else:
                 valid_categories = self.category_list
 
-        tk.Label(edit_win, text="Category:").pack(pady=5)
-        cat_entry = ttk.Combobox(edit_win, values=valid_categories)
-        cat_entry.set(old_cat)
+        ctk.CTkLabel(card, text="Category:", font=("Segoe UI", 12)).pack(pady=0)
+
+        cat_var = ctk.StringVar(value=old_cat)
+        cat_entry = ctk.CTkComboBox(card, values=valid_categories, variable=cat_var, state="readonly", width=200)
         if old_cat == "Main":
-            cat_entry.config(state="disabled")
+            cat_entry.configure(state="disabled")
         else :
-            cat_entry.config(state="readonly")
+            cat_entry.configure(state="readonly")
+        cat_entry.pack(pady=(5, 10))
 
-        cat_entry.pack()
-
-        tk.Label(edit_win, text="Description:").pack(pady=5)
-        desc_entry = tk.Entry(edit_win, width=30)
+        ctk.CTkLabel(card, text="Description:", font=("Segoe UI", 12)).pack(pady=0)
+        desc_entry = ctk.CTkEntry(card, width=200)
         desc_entry.insert(0, old_desc)
-        desc_entry.pack()
+        desc_entry.pack(pady=(5, 10))
 
-        tk.Label(edit_win, text="Amount:").pack(pady=5)
-        amt_entry = tk.Entry(edit_win)
+        ctk.CTkLabel(card, text="Amount:", font=("Segoe UI", 12)).pack(pady=0)
+        amt_entry = ctk.CTkEntry(card, width=200)
         amt_entry.insert(0, str(old_amt))
-        amt_entry.pack()
+        amt_entry.pack(pady=(5, 15))
 
         def save_changes():
             try:
@@ -619,32 +649,30 @@ class StoreApp:
             except ValueError:
                 messagebox.showerror("Error", "Amount must be a number")
 
-        tk.Button(edit_win, text="Save Changes", command=save_changes, bg=self.colors["success"], fg="white").pack(pady=20)
+        ctk.CTkButton(edit_win, text="SAVE CHANGES", command=save_changes, fg_color=self.colors["success"], hover_color="#27ae60", font=("Segoe UI", 12, "bold"), height=40).pack(pady=20, padx=20, fill="x")
 
     def open_settings_window(self):
-        top = tk.Toplevel(self.root)
+        # --- Window ---
+        top = ctk.CTkToplevel(self.root)
         top.title("Configure Rates")
-        top.geometry("300x350")
+        top.geometry("320x400")
+        top.grab_set()
+        top.focus()
 
-        top.configure(bg=self.colors["bg"])
+        # --- Header ---
 
-        tk.Label(top, text="Update Tax Rates", font=("Segoe UI", 14, "bold"), 
-                 bg=self.colors["bg"], fg=self.colors["header"]).pack(pady=15)
+        ctk.CTkLabel(top, text="Update Tax Rates", font=("Roboto Medium", 18), 
+                 text_color=self.colors["accent"]).pack(pady=(20, 10))
         
-        form_frame = tk.Frame(top, bg=self.colors["bg"])
-        form_frame.pack(pady=10)
+        form_frame = ctk.CTkFrame(top, fg_color=self.colors["card"], corner_radius=10)
+        form_frame.pack(padx=20, pady=10, fill="both", expand=True)
 
         def make_row(row, label_text, key):
-            
-            tk.Label(form_frame, text=label_text, font=("Segoe UI", 10), 
-                     bg=self.colors["bg"], fg="#2c3e50", anchor="w").grid(row=row, column=0, padx=15, pady=8, sticky="w")
+            ctk.CTkLabel(form_frame, text=label_text, font=("Segoe UI", 12)).grid(row=row, column=0, padx=15, pady=12, sticky="w")
             
             
-            entry = tk.Entry(form_frame, width=10, font=("Segoe UI", 10), justify="center", bd=1, relief="solid")
-            
-            
-            entry.grid(row=row, column=1, padx=15, pady=8)
-            
+            entry = ctk.CTkEntry(form_frame, width=100, justify="center")
+            entry.grid(row=row, column=1, padx=15, pady=12)
             
             current_val = self.db.get_rate(key) 
             entry.insert(0, str(current_val))
@@ -669,83 +697,77 @@ class StoreApp:
             except ValueError:
                 messagebox.showerror("Error", "Please enter valid numbers", parent=top)
 
-        
-        save_btn = tk.Button(top, text="Save Changes", command=save, 
-                             bg=self.colors["success"], fg="white", font=("Segoe UI", 11, "bold"), 
-                             width=20, relief="flat", cursor="hand2")
-        save_btn.pack(pady=20)
+        # --- Save Button ---
+        save_btn = ctk.CTkButton(top, text="SAVE CHANGES", command=save, 
+                             fg_color=self.colors["success"], hover_color="#27ae60", font=("Segoe UI", 12, "bold"), height=40)
+        save_btn.pack(pady=20, padx=20, fill="x")
 
     def open_exchange_window(self):
-        top = tk.Toplevel(self.root)
+        # -- Popup Window ---
+        top = ctk.CTkToplevel(self.root)
         top.title("Exchange currency")
-        top.geometry("380x500")
-        top.configure(bg=self.colors["bg"])
-        top.resizable(False, False)
+        top.geometry("400x550")
+        top.grab_set()
+        top.focus()
 
-        notebook = ttk.Notebook(top)
-        notebook.pack(fill="both", expand=True, padx=15, pady=15)
+        # --- Tabview ---
+        tabview = ctk.CTkTabview(top, width=350, height=480, corner_radius=10, fg_color=self.colors["bg"],
+                                 segmented_button_selected_color=self.colors["accent"],
+                                 segmented_button_selected_hover_color="#154360")
+        tabview.pack(fill="both", expand=True, padx=20, pady=20)
 
-        currency_exchange_frame = tk.Frame(notebook, bg=self.colors["bg"])
-        bank_transfer_frame = tk.Frame(notebook, bg=self.colors["bg"])
+        tabview.add("Currency Exchange")
+        tabview.add("Bank Transfer")
 
-        notebook.add(currency_exchange_frame, text="Currency Exchange")
-        notebook.add(bank_transfer_frame, text="Bank Transfer")
+        tab_ce = tabview.tab("Currency Exchange")
+        tab_bt = tabview.tab("Bank Transfer")
 
-        tk.Label(currency_exchange_frame, text="Currency Exchange", font=("Segoe UI", 14, "bold"), 
-                 bg=self.colors["header"], fg="white").pack(fill="x", pady=(0, 15), ipady=10)
+        # === TAB 1 : Currency Exchange === #
+        ctk.CTkLabel(tab_ce, text="Amount to Change:", font=("Segoe UI", 12)).pack(anchor="w", pady=(10, 5), padx=20)
+        amt_entry_ce = ctk.CTkEntry(tab_ce, width=300, placeholder_text="0.00")
+        amt_entry_ce.pack(fill="x", padx=20, pady=(0, 15))
 
-        pad_frame_ce = tk.Frame(currency_exchange_frame, bg=self.colors["bg"])
-        pad_frame_ce.pack(fill="both", expand=True, padx=20)
+        ctk.CTkLabel(tab_ce, text="Direction:", font=("Segoe UI", 12)).pack(anchor="w", pady=(0, 5), padx=20)
+        dir_combo_var_ce = ctk.StringVar(value="USD -> LBP")
+        dir_combo_ce = ctk.CTkComboBox(tab_ce, variable=dir_combo_var_ce, values=["USD -> LBP", "LBP -> USD"], state="readonly", width=300)
+        dir_combo_ce.pack(fill="x", padx=20, pady=(0,15))
 
-        tk.Label(pad_frame_ce, text="Amount to Change:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(0,5))
-        amt_entry_ce = tk.Entry(pad_frame_ce, width=20, font=("Segoe UI", 12), bd=2, relief="flat")
-        amt_entry_ce.pack(fill="x", ipady=5)
+        ctk.CTkLabel(tab_ce, text="Exchange Rate:", font=("Segoe UI", 12)).pack(anchor="w", pady=(0, 5), padx=20)
+        rate_entry_ce = ctk.CTkEntry(tab_ce, width=300)
+        rate_entry_ce.insert(0, str(self.db.get_rate("exchange_rate")))
+        rate_entry_ce.pack(fill="x", padx=20, pady=(0, 15))
 
-        tk.Label(pad_frame_ce, text="Direction:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
-        dir_combo_var_ce = tk.StringVar()
-        dir_combo_ce = ttk.Combobox(pad_frame_ce, textvariable=dir_combo_var_ce, values=["USD -> LBP", "LBP -> USD"], state="readonly", font=("Segoe UI", 11))
-        dir_combo_ce.current(0)
-        dir_combo_ce.pack(fill="x", ipady=4)
+        #Result Preview
+        preview_frame = ctk.CTkFrame(tab_ce, fg_color=self.colors["card"], corner_radius=8)
+        preview_frame.pack(fill="x", padx=20, pady=15)
 
-        tk.Label(pad_frame_ce, text="Exchange Rate:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
-        rate_entry_ce = tk.Entry(pad_frame_ce , font=("Segoe UI", 12), width=20, bd=2, relief="flat")
-        rate_entry_ce.insert(0, self.db.get_rate("exchange_rate"))
-        rate_entry_ce.pack(fill="x", ipady=5)
+        result_text_ce = ctk.StringVar(value="Result: ---")
+        ctk.CTkLabel(preview_frame, textvariable=result_text_ce, font=("Consolas", 14, "bold"), text_color=self.colors["success"]).pack(pady=15)
 
-        result_frame_ce = tk.Frame(pad_frame_ce, bg="#dfe6e9", bd=1, relief="solid")
-        result_frame_ce.pack(fill="x", pady=25)
+        # Exchange Button
+        ctk.CTkButton(tab_ce, text="CONFIRM EXCHANGE", command=lambda: process_transaction("currency"),
+                      fg_color=self.colors["accent"], hover_color="#154360",
+                      font=("Segoe UI", 12, "bold"), height=40).pack(side="bottom", fill="x", padx=20, pady=20)
+        
+        # === TAB 2 : Bank Exchange ===
+        ctk.CTkLabel(tab_bt, text="Amount to Move:", font=("Segoe UI", 12)).pack(anchor="w", pady=(10, 5), padx=20)
+        amt_entry_bt = ctk.CTkEntry(tab_bt, width=300, placeholder_text="0.00")
+        amt_entry_bt.pack(fill="x", padx=20, pady=(0, 15))
 
-        result_text_ce = tk.StringVar()
-        result_text_ce.set("---")
-        tk.Label(result_frame_ce, textvariable=result_text_ce, font=("Consolas", 14, "bold"), bg="#dfe6e9", fg="#2d3436").pack(pady=10)
+        ctk.CTkLabel(tab_bt, text="Currency:", font=("Segoe UI", 12)).pack(anchor="w", pady=(0, 5), padx=20)
+        cur_combo_var_bt = ctk.StringVar(value="USD ($)")
+        cur_combo_bt = ctk.CTkComboBox(tab_bt, variable=cur_combo_var_bt, values=["USD ($)", "Lira (LBP)"], state="readonly", width=300)
+        cur_combo_bt.pack(fill="x", padx=20, pady=(0, 15))
 
-        exchange_btn_ce = tk.Button(currency_exchange_frame, text="CONFIRM EXCHANGE", command=lambda: process_transaction("transfer"), bg=self.colors["accent"], fg="white", font=("Segoe UI", 12, "bold"), relief="flat", cursor="hand2")
-        exchange_btn_ce.pack(side=tk.BOTTOM, fill="x", pady=20, padx=20, ipady=10)
+        ctk.CTkLabel(tab_bt, text="Direction:", font=("Segoe UI", 12)).pack(anchor="w", pady=(0, 5), padx=20)
+        dir_combo_var_bt = ctk.StringVar(value="Cash -> Card")
+        dir_combo_bt = ctk.CTkComboBox(tab_bt, variable=dir_combo_var_bt, values=["Cash -> Card", "Card -> Cash"], state="readonly", width=300)
+        dir_combo_bt.pack(fill="x", padx=20, pady=(0, 15))
 
-        tk.Label(bank_transfer_frame, text="Bank Transfer", font=("Segoe UI", 14, "bold"), 
-                 bg=self.colors["header"], fg="white").pack(fill="x", pady=(0, 15), ipady=10)
-
-        pad_frame_bt = tk.Frame(bank_transfer_frame, bg=self.colors["bg"])
-        pad_frame_bt.pack(fill="both", expand=True, padx=20)
-
-        tk.Label(pad_frame_bt, text="Amount to Move:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(0,5))
-        amt_entry_bt = tk.Entry(pad_frame_bt, width=20, font=("Segoe UI", 12), bd=2, relief="flat")
-        amt_entry_bt.pack(fill="x", ipady=5)
-
-        tk.Label(pad_frame_bt, text="Currency:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
-        cur_combo_var_bt = tk.StringVar()
-        cur_combo_bt = ttk.Combobox(pad_frame_bt, textvariable=cur_combo_var_bt, values=["USD ($)", "Lira (LBP)"], state="readonly", font=("Segoe UI", 11))
-        cur_combo_bt.current(0)
-        cur_combo_bt.pack(fill="x", ipady=4)
-
-        tk.Label(pad_frame_bt, text="Direction:", font=("Segoe UI", 11), bg=self.colors["bg"]).pack(anchor="w", pady=(15,5))
-        dir_combo_var_bt = tk.StringVar()
-        dir_combo_bt = ttk.Combobox(pad_frame_bt, textvariable=dir_combo_var_bt, values=["Cash -> Card", "Card -> Cash"], state="readonly", font=("Segoe UI", 11))
-        dir_combo_bt.current(0)
-        dir_combo_bt.pack(fill="x", ipady=4)
-
-        exchange_btn_bt = tk.Button(bank_transfer_frame, text="CONFIRM TRANSFER", command=lambda: process_transaction("transfer"), bg=self.colors["accent"], fg="white", font=("Segoe UI", 12, "bold"), relief="flat", cursor="hand2")
-        exchange_btn_bt.pack(side=tk.BOTTOM, fill="x", pady=20, padx=20, ipady=10)
+        # Transfer Button
+        ctk.CTkButton(tab_bt, text="CONFIRM TRANSFER", command=lambda: process_transaction("transfer"), 
+                      fg_color=self.colors["accent"], hover_color="#154360", 
+                      font=("Segoe UI", 12, "bold"), height=40).pack(side="bottom", fill="x", padx=20, pady=20)
 
         def update_preview(event=None):
             try:
@@ -765,7 +787,7 @@ class StoreApp:
                     result_text_ce.set(f"Will receive: {res:,.0f} L.L")
                 else:
                     res = amount / rate
-                    result_text_ce.set(f"Will Receive: {res:,.2f}")
+                    result_text_ce.set(f"Will Receive: {res:,.2f} $")
 
             except ValueError:
                 result_text_ce.set("Result: ...")
@@ -829,30 +851,41 @@ class StoreApp:
 
         amt_entry_ce.bind("<KeyRelease>", update_preview)
         rate_entry_ce.bind("<KeyRelease>", update_preview)
-        dir_combo_ce.bind("<<ComboboxSelected>>", update_preview)
+        dir_combo_ce.configure(command=update_preview)
 
     def open_balances_window(self):
-        top = tk.Toplevel(self.root)
+        top = ctk.CTkToplevel(self.root)
         top.title("All Branch Balances")
-        top.geometry("700x500")
-        top.configure(bg=self.colors["bg"])
+        top.geometry("750x600")
+        top.grab_set()
+        top.focus()
 
-        tk.Label(top, text="Current Balance Sheet", font=("Segoe UI", 16, "bold"), 
-                 bg=self.colors["bg"], fg=self.colors["header"]).pack(pady=15)
+        ctk.CTkLabel(top, text="Current Balance Sheet", font=("Roboto Medium", 20), 
+                 text_color=self.colors["accent"]).pack(pady=(20, 15))
+        
+        table_frame = ctk.CTkFrame(top, fg_color="transparent")
+        table_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
 
         cols = ("Branch", "USD Cash", "USD Card", "LBP Cash", "LBP Card")
-        tree = ttk.Treeview(top, columns=cols, show="headings", height=15)
-        
+        tree = ttk.Treeview(table_frame, columns=cols, show="headings", selectmode="none")
 
         tree.heading("Branch", text="Branch")
-        tree.column("Branch", width=140, anchor="w")
+        tree.column("Branch", width=160, anchor="w")
         
         for col in cols[1:]:
             tree.heading(col, text=col)
-            tree.column(col, width=120, anchor="e")
+            tree.column(col, width=130, anchor="e")
 
-        tree.pack(fill="both", expand=True, padx=20, pady=10)
+        
 
+        # SCrollbar
+        scrollbar = ctk.CTkScrollbar(table_frame, orientation="vertical", command=tree.yview)
+        scrollbar.pack(side="right", fill="y")
+        tree.configure(yscroll=scrollbar.set)
+
+        tree.pack(fill="both", expand=True, side="left")
+
+        # DATA PROCESSING LOGIC
         raw_data = self.db.get_balance_summary()
 
         branch_data = {}
@@ -901,70 +934,75 @@ class StoreApp:
                                        f"{grand_totals[3]:,.0f} L.L"), 
                                        tags=("total_row",))
         
-        tree.tag_configure("total_row", background="#2c3e50", foreground="white", font=("Segoe UI", 10, "bold"))
+        tree.tag_configure("total_row", background=self.colors["accent"], foreground="white", font=("Segoe UI", 11, "bold"))
 
     def open_daily_reconciliation_window(self):
         # 1. Window Setup
-        top = tk.Toplevel(self.root)
+        top = ctk.CTkToplevel(self.root)
         top.title("Daily Reconciliation")
         top.geometry("1100x700") 
-        top.configure(bg=self.colors["bg"])
+        top.grab_set()
+        top.focus()
 
         # --- Section 1: Header (Setup & Target) ---
-        header_frame = tk.Frame(top, bg=self.colors["header"], height=120)
+        header_frame = ctk.CTkFrame(top, fg_color=self.colors["header"], height=120, corner_radius=0)
         header_frame.pack(fill="x")
 
         # Left Side: Selectors
-        setup_frame = tk.Frame(header_frame, bg=self.colors["header"])
-        setup_frame.pack(side=tk.LEFT, padx=20, pady=20)
+        setup_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        setup_frame.pack(side="left", padx=20, pady=20)
 
-        tk.Label(setup_frame, text="Branch:", font=("Segoe UI", 10, "bold"), fg="#bdc3c7", bg=self.colors["header"]).grid(row=0, column=0, sticky="w")
-        self.recon_branch = ttk.Combobox(setup_frame, values=self.db.get_store_names(), state="readonly", width=15)
-        self.recon_branch.current(0)
-        self.recon_branch.grid(row=0, column=1, padx=5)
+        ctk.CTkLabel(setup_frame, text="Branch:", font=("Segoe UI", 12, "bold"), text_color="#bdc3c7").grid(row=0, column=0, sticky="w")
 
-        tk.Label(setup_frame, text="Date:", font=("Segoe UI", 10, "bold"), fg="#bdc3c7", bg=self.colors["header"]).grid(row=1, column=0, sticky="w", pady=(5,0))
-        self.recon_date = DateEntry(setup_frame, width=12, background="darkblue", foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
-        self.recon_date.grid(row=1, column=1, padx=5, pady=(5,0))
+        self.recon_branch = ctk.CTkComboBox(setup_frame, values=self.db.get_store_names(), state="readonly", width=150)
+        self.recon_branch.set(self.db.get_store_names()[0])
+        self.recon_branch.grid(row=0, column=1, padx=10)
+
+        ctk.CTkLabel(setup_frame, text="Date:", font=("Segoe UI", 12, "bold"), text_color="#bdc3c7").grid(row=1, column=0, sticky="w", pady=(10,0))
+
+        self.recon_date = DateEntry(setup_frame, width=15, background="#1f538d", foreground='white', borderwidth=0, font=("Segoe UI", 12), date_pattern='yyyy-mm-dd')
+        self.recon_date.grid(row=1, column=1, padx=10, pady=(10,0), ipady=5)
 
         # --- THE NEW BUTTONS SECTION ---
-        btn_frame = tk.Frame(header_frame, bg=self.colors["header"])
-        btn_frame.pack(side=tk.LEFT, padx=30)
+        btn_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        btn_frame.pack(side="left", padx=30)
 
         # Load Button
-        tk.Button(btn_frame, text="📥 Load Target", bg="#34495e", fg="white", relief="raised", font=("Segoe UI", 9, "bold"), width=12,
-                  command=self.load_daily_sales).pack(pady=2)
+        ctk.CTkButton(btn_frame, text="📥 Load Target", fg_color="#34495e", hover_color="#2c3e50", font=("Segoe UI", 12, "bold"), width=120,
+                  command=self.load_daily_sales).pack(pady=5)
 
         # NEW Save Button
-        tk.Button(btn_frame, text="💾 Save Target", bg="#27ae60", fg="white", relief="raised", font=("Segoe UI", 9, "bold"), width=12,
-                  command=self.save_daily_sales_target).pack(pady=2)
+        ctk.CTkButton(btn_frame, text="💾 Save Target", fg_color="#27ae60", hover_color="#219a52", font=("Segoe UI", 12, "bold"), width=120,
+                  command=self.save_daily_sales_target).pack(pady=5)
 
 
         # Right Side: The Target Input
-        target_frame = tk.Frame(header_frame, bg=self.colors["header"])
-        target_frame.pack(side=tk.RIGHT, padx=30, pady=20)
+        target_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        target_frame.pack(side="right", padx=30, pady=20)
 
-        tk.Label(target_frame, text="Expected Sales (LBP):", font=("Segoe UI", 14, "bold"), fg="#f1c40f", bg=self.colors["header"]).pack(anchor="e")
+        ctk.CTkLabel(target_frame, text="Expected Sales (LBP):", font=("Segoe UI", 14, "bold"), text_color="#f1c40f").pack(anchor="e")
         
-        self.target_entry = tk.Entry(target_frame, font=("Consolas", 18, "bold"), width=15, justify="right")
+        self.target_entry = ctk.CTkEntry(target_frame, font=("Consolas", 18, "bold"), width=200, justify="right")
         self.target_entry.pack(anchor="e", pady=(5,0))
         
         # Bind to recalculate
         self.target_entry.bind("<KeyRelease>", self.recalc_sales_difference)
 
         # --- Section 2: The Envelopes (The Count) ---
-        envelopes_container = tk.Frame(top, bg=self.colors["bg"])
-        envelopes_container.pack(fill="both", expand=True, padx=20, pady=10)
+        envelopes_container = ctk.CTkFrame(top, fg_color="transparent")
+        envelopes_container.pack(fill="both", expand=True, padx=20, pady=20)
 
         # FIX 2: Create the dictionary that your logic is looking for
         self.recon_inputs = {"env1": {}, "env2": {}}
 
         def build_envelope_grid(parent, title, key):
-            frame = tk.LabelFrame(parent, text=title, font=("Segoe UI", 12, "bold"), bg="white", fg="#2c3e50", padx=15, pady=15)
-            frame.pack(side=tk.LEFT, fill="both", expand=True, padx=10)
+            frame = ctk.CTkFrame(parent, fg_color=self.colors["card"], corner_radius=15)
+            frame.pack(side="left", fill="both", expand=True, padx=10)
 
-            tk.Label(frame, text="Currency", font=("Segoe UI", 9, "bold"), bg="white", fg="#7f8c8d").grid(row=0, column=0, sticky="w", pady=(0,10))
-            tk.Label(frame, text="Amount", font=("Segoe UI", 9, "bold"), bg="white", fg="#7f8c8d").grid(row=0, column=1, sticky="w", pady=(0,10))
+            ctk.CTkLabel(frame, text=title, font=("Roboto Medium", 16), text_color="white").grid(row=0, column=0, columnspan=2, pady=(15,15))
+
+            ctk.CTkLabel(frame, text="Currency", font=("Segoe UI", 11, "bold"), text_color="#7f8c8d").grid(row=1, column=0, sticky="w", padx=20, pady=(0,10))
+            ctk.CTkLabel(frame, text="Amount", font=("Segoe UI", 11, "bold"),  text_color="#7f8c8d").grid(row=1, column=1, sticky="w", padx=20, pady=(0,10))
 
             rows = [
                 ("USD Cash", "usd_cash"),
@@ -974,10 +1012,10 @@ class StoreApp:
             ]
 
             for i, (label_text, tag) in enumerate(rows):
-                tk.Label(frame, text=label_text, font=("Segoe UI", 11), bg="white").grid(row=i+1, column=0, pady=8, sticky="w")
+                ctk.CTkLabel(frame, text=label_text, font=("Segoe UI", 12)).grid(row=i+2, column=0, pady=10, padx=20, sticky="w")
                 
-                entry = tk.Entry(frame, font=("Segoe UI", 11), width=16, justify="right", bg="#f8f9fa", relief="solid", bd=1)
-                entry.grid(row=i+1, column=1, pady=8, padx=10)
+                entry = ctk.CTkEntry(frame, font=("Segoe UI", 12), width=180, justify="right", placeholder_text="0.00")
+                entry.grid(row=i+2, column=1, pady=10, padx=10)
                 
                 # FIX 3: Bind to the correct function name
                 entry.bind("<KeyRelease>", self.recalc_sales_difference)
@@ -989,27 +1027,27 @@ class StoreApp:
         build_envelope_grid(envelopes_container, "✉️ Envelope 2", "env2")
 
         # --- Section 3: The Footer (Verdict & Action) ---
-        footer_frame = tk.Frame(top, bg="#ecf0f1", height=100)
-        footer_frame.pack(fill="x", side=tk.BOTTOM)
+        footer_frame = ctk.CTkFrame(top, fg_color=self.colors["header"], height=100, corner_radius=0)
+        footer_frame.pack(fill="x", side="bottom")
 
-        results_box = tk.Frame(footer_frame, bg="#ecf0f1")
-        results_box.pack(side=tk.LEFT, padx=40, pady=20)
+        results_box = ctk.CTkFrame(footer_frame, fg_color="transparent")
+        results_box.pack(side="left", padx=40, pady=20)
 
-        self.lbl_total_counted = tk.Label(results_box, text="Total Counted: 0 LBP", font=("Segoe UI", 12), bg="#ecf0f1", fg="#7f8c8d")
+        self.lbl_total_counted = ctk.CTkLabel(results_box, text="Total Counted: 0 LBP", font=("Segoe UI", 14), text_color="#bdc3c7")
         self.lbl_total_counted.pack(anchor="w")
 
-        self.lbl_difference = tk.Label(results_box, text="Difference: 0 LBP", font=("Segoe UI", 16, "bold"), bg="#ecf0f1", fg="#2c3e50")
+        self.lbl_difference = ctk.CTkLabel(results_box, text="Difference: 0 LBP", font=("Segoe UI", 20, "bold"), text_color="white")
         self.lbl_difference.pack(anchor="w")
 
-        actions_box = tk.Frame(footer_frame, bg="#ecf0f1")
-        actions_box.pack(side=tk.RIGHT, padx=40, pady=20)
+        actions_box = ctk.CTkFrame(footer_frame, fg_color="transparent")
+        actions_box.pack(side="right", padx=40, pady=20)
 
-        self.apply_tax_var = tk.IntVar(value=1)
-        tk.Checkbutton(actions_box, text="Apply Main Taxes", variable=self.apply_tax_var, bg="#ecf0f1", font=("Segoe UI", 11)).pack(anchor="e", pady=(0,10))
+        self.apply_tax_var = ctk.IntVar(value=1)
+        ctk.CTkCheckBox(actions_box, text="Apply Main Taxes", variable=self.apply_tax_var, font=("Segoe UI", 12)).pack(anchor="e", pady=(0,15))
 
         # FIX 4: Bind button to 'submit_sale'
-        self.btn_recon_confirm = tk.Button(actions_box, text="CONFIRM & POST", bg="#95a5a6", fg="white", 
-                                           font=("Segoe UI", 11, "bold"), width=20, state="disabled",
+        self.btn_recon_confirm = ctk.CTkButton(actions_box, text="CONFIRM & POST", fg_color="#7f8c8d", text_color="white", 
+                                           font=("Segoe UI", 14, "bold"), width=200, height=45,  state="disabled",
                                            command=self.submit_sale)
         self.btn_recon_confirm.pack(anchor="e")
 
@@ -1069,18 +1107,18 @@ class StoreApp:
             total_env = LBP_cash + LBP_card + ((usd_cash + usd_card) * rate)
             entered_amount += total_env
 
-        self.lbl_total_counted.config(text=f"Total Counted: {entered_amount:,.0f} L.L")
+        self.lbl_total_counted.configure(text=f"Total Counted: {entered_amount:,.0f} L.L")
 
         difference = real_amount - entered_amount
 
-        self.lbl_difference.config(text=f"Difference: {difference:,.0f} L.L")
+        self.lbl_difference.configure(text=f"Difference: {difference:,.0f} L.L")
 
         if abs(difference) < 100000:
-            self.lbl_difference.config(fg="#27ae60")
-            self.btn_recon_confirm.config(state="normal", bg="#27ae60")
+            self.lbl_difference.configure(text_color="#27ae60")
+            self.btn_recon_confirm.configure(state="normal", fg_color="#27ae60", hover_color="#27ae60")
         else :
-            self.lbl_difference.config(fg="#c0392b")
-            self.btn_recon_confirm.config(state="normal", bg="#c0392b")
+            self.lbl_difference.configure(text_color="#c0392b")
+            self.btn_recon_confirm.configure(state="normal", fg_color="#c0392b", hover_color="#e74c3c")
 
     def submit_sale(self):
         branch = self.recon_branch.get()
@@ -1154,39 +1192,38 @@ class StoreApp:
 
 
 
-    def toggle_category_state(self, event=None):
+    def toggle_category_state(self, choice=None):
         current_type = self.type_combo.get()
         current_store = self.store_combo.get()
 
         if current_type == "Income":
-            self.cat_combo.config(state="readonly")
-            self.cat_combo['values'] = ["Sales", "Investment"]
-            self.cat_combo.current(0)
+            new_values = ["Sales", "Investment"]
+            self.cat_combo.configure(values=new_values, state="readonly")
+            self.cat_combo.set(new_values[0])
         else:
             if current_store in self.system_accounts:
 
                 if current_store == "Main Vault":
-                    self.cat_combo.config(state="readonly")
-                    self.cat_combo['values'] = self.main_category_list
-                    self.cat_combo.current(0)
+                    new_values = self.main_category_list
+                    self.cat_combo.configure(values = new_values, state="readonly")
+                    self.cat_combo.set(new_values[0])
                 
                 else:
-                    self.cat_combo.config(state="normal")
-                    self.cat_combo['values'] = []
-                    self.cat_combo.delete(0, "end")
+                    self.cat_combo.configure(values =[] , state="normal")
+                    self.cat_combo.set("")
 
             else:
-                self.cat_combo.config(state="readonly")
-                self.cat_combo['values'] = self.category_list
-                self.cat_combo.current(0)
+                new_values = self.category_list
+                self.cat_combo.configure(values=new_values, state="readonly")
+                self.cat_combo.set(new_values[0])
 
     def reset_filters(self):
-        self.filter_cat.current(0)
-        self.filter_type.current(0)
+        self.filter_cat.set("All")
+        self.filter_type.set("All")
         self.date_from.delete(0, tk.END)
         self.date_to.delete(0, tk.END)
-        self.filter_curr.current(0)
-        self.filter_paym.current(0)
+        self.filter_curr.set("All")
+        self.filter_paym.set("All")
         self.view_records()
 
     def delete_record(self):
@@ -1294,8 +1331,8 @@ class StoreApp:
         total_lbp_cash = 0
         total_lbp_card = 0
 
-        self.tree.tag_configure("oddrow", background="#f0f0f0")
-        self.tree.tag_configure("evenrow", background="white")
+        self.tree.tag_configure("oddrow", background="#2b2b2b", foreground="white")
+        self.tree.tag_configure("evenrow", background="#383838", foreground="white")
 
         count = 0
 
@@ -1323,31 +1360,31 @@ class StoreApp:
             if f_paym != "All" and paym != f_paym:
                 continue
 
-            if f_cat != "All":
-
+            if f_cat != "All" and f_cat.strip() != "":
+                
                 if f_cat == "Exchange In/Out":
-                    allowed_categories = ["Exchange In", "Exchange Out"]
-
-                if f_cat == "Bank Transfer In/Out":
-                    allowed_categories = ["Bank Transfer Out", "Bank Transfer In"]
-
-                elif store_name in self.system_accounts:
-                    allowed_categories = [f_cat, f"from {f_cat}"]
-
+                    if categ not in ["Exchange In", "Exchange Out"]:
+                        continue
+                        
+                elif f_cat == "Bank Transfer In/Out":
+                    if categ not in ["Bank Transfer Out", "Bank Transfer In"]:
+                        continue        
                 else:
-                    allowed_categories = [f_cat]
-
-                if categ not in allowed_categories:
-                    continue
+                    is_fuzzy_match = f_cat.lower() in categ.lower()
+                    
+                    is_from_match = (store_name in self.system_accounts) and (categ == f"from {f_cat}")
+                    
+                    if not (is_fuzzy_match or is_from_match):
+                        continue
 
             
 
             self.current_data.append(row)
-
-            if count % 2 == 0:
-                self.tree.insert("", "end", values=row, tags=("evenrow",))
-            else:
-                self.tree.insert("", "end", values=row, tags=("oddrow",))
+            if count < 300:
+                if count % 2 == 0:
+                    self.tree.insert("", "end", values=row, tags=("evenrow",))
+                else:
+                    self.tree.insert("", "end", values=row, tags=("oddrow",))
             
             count += 1
 
@@ -1375,7 +1412,11 @@ class StoreApp:
 
 
         report = f"USD Cash: ${total_usd_cash:,.2f} | USD Card ${total_usd_card:,.2f}\n LBP Cash: {total_lbp_cash:,.0f} L.L | LBP Card: {total_lbp_card:,.0f} L.L"
-        self.status_label.config(text=report, font=("Consolas", 12, "bold"), justify=tk.LEFT)
+        self.status_label.configure(text=report)
+        current_rate = self.db.get_rate("exchange_rate")
+
+        grand_total_usd = total_usd_cash + (total_lbp_cash / current_rate) + total_usd_card + (total_lbp_card / current_rate) if current_rate > 0 else 0
+        self.grand_total_label.configure(text=f"Grand Total: ${grand_total_usd:,.2f}")
 
 
     def update_filter_dropdown(self, event=None):
@@ -1386,33 +1427,31 @@ class StoreApp:
 
         extra_filters = ["Exchange In/Out", "Bank Transfer In/Out"]
 
+        combo_state = "readonly"
+
         if current_store in self.system_accounts:
             if f_type == "Income":
-                self.filter_cat.config(state="readonly")
                 all_branches = self.db.get_store_names()
                 real_branches = [s for s in all_branches if s not in self.system_accounts]
                 new_values += real_branches
 
             elif f_type == "Expense":
                 if current_store == "Main Vault":
-                    self.filter_cat.config(state="readonly")
                     new_values += self.main_category_list
                 else:
-                    self.filter_cat.config(state="normal")
-                    self.filter_cat.delete(0, "end")
+                    combo_state = "normal"
 
             else :
-                self.filter_cat.config(state="readonly")
                 all_branches = self.db.get_store_names()
                 real_branches = [s for s in all_branches if s not in self.system_accounts]
                 if current_store == "Main Vault":
                     new_values += self.main_category_list + real_branches
                 else:
                     new_values += real_branches
+                    combo_state = "normal"
         
 
         else :
-            self.filter_cat.config(state="readonly")
             if f_type == "Income":
                 new_values += ["Sales", "Investment"] + extra_filters
             elif f_type == "Expense":
@@ -1420,8 +1459,8 @@ class StoreApp:
             else:
                 new_values += self.category_list + ["Sales", "Investment"] + extra_filters
 
-        self.filter_cat['values'] = new_values
-        self.filter_cat.current(0)
+        self.filter_cat.configure(values=new_values, state=combo_state)
+        self.filter_cat.set(new_values[0])
 
         self.view_records()
     
@@ -1459,28 +1498,34 @@ class StoreApp:
     def setup_styles(self):
         style = ttk.Style()
 
-        style.theme_use('clam')
+        style.theme_use("default")
 
         style.configure("Treeview", 
-                        background="white",
-                        foreground="black",
-                        rowheight=30, 
-                        fieldbackground="white",
-                        font=("Segoe UI", 10))
+                        background="#2b2b2b",
+                        foreground="white",
+                        fieldbackground="#2b2b2b",
+                        rowheight=35, 
+                        font=("Segoe UI", 11),
+                        borderwidth=0)
         
         
         style.configure("Treeview.Heading", 
                         font=("Segoe UI", 11, "bold"),
-                        background="#dfe6e9",
-                        foreground="#2d3436")
+                        background="#1a1a1a",
+                        foreground="white",
+                        relief="flat")
+        
+        style.map("Treeview.Heading",
+                  background=[('active', '#333333')])
         
         
-        style.configure("TLabelframe", background=self.colors["bg"])
-        style.configure("TLabelframe", font=("Segoe UI", 10, "bold"), background=self.colors["bg"], foreground="#2c3e50")
+        style.map("Treeview",
+                  background=[('selected', '#1f538d')],
+                  foreground=[('selected', 'white')])
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ctk.CTk()
     app = StoreApp(root)
     root.mainloop()
     
