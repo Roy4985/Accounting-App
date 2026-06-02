@@ -276,6 +276,7 @@ class StoreApp:
             "Cost of goods",
             "Cleaner",
             "Main",
+            "Extra Cash"
         ]
 
         self.main_category_list = [
@@ -291,6 +292,15 @@ class StoreApp:
             "Rent",
             "Transportation",
             "Various",
+        ]
+
+        self.warehouse_category_list = [
+            "Delivery",
+            "Charges",
+            "Social Media",
+            "Various",
+            "Salaries",
+            "Yearly Fees"
         ]
 
         self.current_data = []
@@ -588,10 +598,12 @@ class StoreApp:
         valid_categories = []
         store = self.store_combo.get()
         if old_type == "Income":
-                    valid_categories = ["Sales", "Investment"]
+                valid_categories = ["Sales", "Investment"]
         else:
             if store == "Main Vault":
                 valid_categories = self.main_category_list
+            elif store == "Warehouse":
+                valid_categories = self.warehouse_category_list
             else:
                 valid_categories = self.category_list
 
@@ -1075,6 +1087,16 @@ class StoreApp:
                 return
                 
             amount = float(val_str)
+
+            existing_amount = self.db.get_daily_sale(branch, date)
+
+            if existing_amount > 0 and existing_amount != amount:
+                confirm = messagebox.askyesno(
+                    "Overwrite Target?", 
+                    f"A target of {existing_amount:,.0f} LBP is already saved for {branch} on {date}.\n\nDo you want to overwrite it with {amount:,.0f} LBP?"
+                )
+                if not confirm:
+                    return # User clicked No, cancel the save
             
             self.db.save_daily_sale(branch, date, amount)
             
@@ -1211,6 +1233,11 @@ class StoreApp:
                 else:
                     self.cat_combo.configure(values =[] , state="normal")
                     self.cat_combo.set("")
+                
+            elif current_store == "Warehouse":
+                new_values = self.warehouse_category_list
+                self.cat_combo.configure(values = new_values, state="readonly")
+                self.cat_combo.set(new_values[0])
 
             else:
                 new_values = self.category_list
@@ -1302,7 +1329,7 @@ class StoreApp:
             self.date_entry.set_date(datetime.now())
             self.desc_entry.delete(0, tk.END)
 
-            self.type_combo.current(0)
+            self.type_combo.set("Income")
             self.toggle_category_state()
 
             self.view_records()
@@ -1455,9 +1482,15 @@ class StoreApp:
             if f_type == "Income":
                 new_values += ["Sales", "Investment"] + extra_filters
             elif f_type == "Expense":
-                new_values += self.category_list + extra_filters
-            else:
-                new_values += self.category_list + ["Sales", "Investment"] + extra_filters
+                if current_store == "Warehouse":
+                    new_values = self.warehouse_category_list + extra_filters
+                else:
+                    new_values += self.category_list + extra_filters
+            else: #If all is selected
+                if current_store == "Warehouse":
+                    new_values = self.warehouse_category_list + extra_filters + ["Sales", "Investment"]
+                else:
+                    new_values += self.category_list + ["Sales", "Investment"] + extra_filters
 
         self.filter_cat.configure(values=new_values, state=combo_state)
         self.filter_cat.set(new_values[0])
