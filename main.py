@@ -7,6 +7,9 @@ import csv
 from tkcalendar import DateEntry
 import os
 import shutil
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -67,6 +70,13 @@ class DatabaseManager:
                        store_id INTEGER,
                        amount REAL,
                        PRIMARY KEY (store_id, date))""")
+        
+        self.c.execute("""CREATE TABLE IF NOT EXISTS daily_metrics (
+                       branch TEXT,
+                       date TEXT,
+                       receipts INTEGER,
+                       footfall INTEGER,
+                       PRIMARY KEY (branch, date))""")
 
         self.c.execute("CREATE INDEX IF NOT EXISTS idx_store_date ON transactions(store_id, date)")
         
@@ -226,6 +236,23 @@ class DatabaseManager:
         """
         self.c.execute(query)
         return self.c.fetchall()
+    
+    def save_daily_metrics(self, branch, date, receipts, footfall):
+        self.c.execute("""
+                        INSERT OR REPLACE INTO daily_metrics (branch, date, receipts, footfall) VALUES (?,?,?,?) """, (branch, date, receipts, footfall))
+        self.conn.commit()
+
+    def get_daily_metrics(self, branch, date):
+        self.c.execute('''
+            SELECT receipts, footfall FROM daily_metrics 
+            WHERE branch = ? AND date = ?
+        ''', (branch, date))
+
+        result = self.c.fetchone()
+
+        if result:
+            return result[0], result[1]
+        return "", ""
         
 #This class will be used for the user interface (GUI)
 class StoreApp:
@@ -265,6 +292,14 @@ class StoreApp:
         self.setup_styles()
 
         self.system_accounts = ["Main Vault", "TVA Account", "Bank Commission", "Cost of goods", "Freight"]
+
+        self.physical_branches = [
+            "LeMall", 
+            "City Center", 
+            "City Mall", 
+            "Tripoli", 
+            "Koura"
+        ]
 
         self.category_list = [
             "Salaries",
@@ -349,6 +384,11 @@ class StoreApp:
                                  font=("Segoe UI", 11, "bold"), cursor="hand2",
                                  command=self.open_daily_reconciliation_window)
         recon_btn.pack(side=tk.RIGHT, padx=5)
+
+        btn_analytics = ctk.CTkButton(header_frame, text="📊 Analytics", font=("Segoe UI", 11, "bold"), 
+                                    width=120, height=35, fg_color="#e67e22", hover_color="#d35400", cursor="hand2",
+                                    command=self.open_analytics_window)
+        btn_analytics.pack(side=tk.RIGHT, padx=5)
 
         all_stores = self.db.get_store_names()
 
@@ -992,10 +1032,25 @@ class StoreApp:
         target_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
         target_frame.pack(side="right", padx=30, pady=20)
 
-        ctk.CTkLabel(target_frame, text="Expected Sales (LBP):", font=("Segoe UI", 14, "bold"), text_color="#f1c40f").pack(anchor="e")
-        
-        self.target_entry = ctk.CTkEntry(target_frame, font=("Consolas", 18, "bold"), width=200, justify="right")
-        self.target_entry.pack(anchor="e", pady=(5,0))
+        target_label = ctk.CTkLabel(target_frame, text="Expected Sales (LBP):", font=("Segoe UI", 12, "bold"), text_color="#f1c40f")
+        target_label.grid(row=0, column=0, padx=10, pady=(0, 2), sticky="w")
+
+        self.target_entry = ctk.CTkEntry(target_frame, width=160, font=("Segoe UI", 12))
+        self.target_entry.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="w")
+
+        # 2. Total Receipts
+        receipts_label = ctk.CTkLabel(target_frame, text="Total Receipts:", font=("Segoe UI", 12, "bold"))
+        receipts_label.grid(row=0, column=1, padx=10, pady=(0, 2), sticky="w")
+
+        self.receipts_entry = ctk.CTkEntry(target_frame, placeholder_text="e.g. 45", width=120, font=("Segoe UI", 12))
+        self.receipts_entry.grid(row=1, column=1, padx=10, pady=(0, 10), sticky="w")
+
+        # 3. Total Footfall
+        footfall_label = ctk.CTkLabel(target_frame, text="Total Footfall:", font=("Segoe UI", 12, "bold"))
+        footfall_label.grid(row=0, column=2, padx=10, pady=(0, 2), sticky="w")
+
+        self.footfall_entry = ctk.CTkEntry(target_frame, placeholder_text="e.g. 120", width=120, font=("Segoe UI", 12))
+        self.footfall_entry.grid(row=1, column=2, padx=10, pady=(0, 10), sticky="w")
         
         # Bind to recalculate
         self.target_entry.bind("<KeyRelease>", self.recalc_sales_difference)
@@ -1073,7 +1128,17 @@ class StoreApp:
 
         if amount > 0:
             self.target_entry.insert(0, f"{amount:.0f}")
+
+        self.receipts_entry.delete(0, 'end')
+        self.footfall_entry.delete(0, 'end')
+
+        receipts, footfall = self.db.get_daily_metrics(branch_name, date)
         
+        if receipts != "":
+            self.receipts_entry.insert(0, str(receipts))
+        if footfall != "":
+            self.footfall_entry.insert(0, str(footfall))
+
         self.recalc_sales_difference()
 
     def save_daily_sales_target(self):
@@ -1088,6 +1153,16 @@ class StoreApp:
                 
             amount = float(val_str)
 
+            try:
+                receipts_val = self.receipts_entry.get()
+                footfall_val = self.footfall_entry.get()
+
+                receipts = int(receipts_val) if receipts_val else 0
+                footfall = int(footfall_val) if footfall_val else 0
+            except ValueError:
+                messagebox.showerror("Error","Receipts and Footfall must be a whole number")
+                return
+
             existing_amount = self.db.get_daily_sale(branch, date)
 
             if existing_amount > 0 and existing_amount != amount:
@@ -1099,10 +1174,14 @@ class StoreApp:
                     return # User clicked No, cancel the save
             
             self.db.save_daily_sale(branch, date, amount)
+            self.db.save_daily_metrics(branch, date, receipts, footfall)
             
             messagebox.showinfo("Saved", f"Target of {amount:,.0f} LBP saved for {branch} on {date}.")
 
             self.recalc_sales_difference()
+
+            self.receipts_entry.delete(0, 'end')
+            self.footfall_entry.delete(0, 'end')
             
         except ValueError:
             messagebox.showerror("Error", "Invalid Number")
@@ -1212,7 +1291,225 @@ class StoreApp:
         else:
             messagebox.showwarning("Warning", "No amounts were entered.")
 
+    def open_analytics_window(self):
+        # 1. Create the Window
+        dash_win = ctk.CTkToplevel(self.root)
+        dash_win.title("📊 Physical Retail Analytics")
+        dash_win.geometry("950x700")
+        dash_win.grab_set() # Forces user to focus on this window
 
+        # ==========================================
+        # TOP BAR: Filters & Controls
+        # ==========================================
+        filter_frame = ctk.CTkFrame(dash_win, fg_color="transparent")
+        filter_frame.pack(fill="x", padx=20, pady=(20, 10))
+
+        # Branch Dropdown
+        ctk.CTkLabel(filter_frame, text="Branch:", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(0, 10))
+        self.analytics_branch = ctk.CTkComboBox(
+            filter_frame, 
+            values=["All Physical Stores"] + self.physical_branches,
+            state="readonly",
+            width=180
+        )
+        self.analytics_branch.pack(side="left", padx=(0, 20))
+        self.analytics_branch.set("All Physical Stores")
+
+        # Start Date
+        ctk.CTkLabel(filter_frame, text="From:", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(0, 10))
+        self.analytics_start = DateEntry(filter_frame, width=12, background='darkblue',
+                                       foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.analytics_start.pack(side="left", padx=(0, 20), ipady=4)
+
+        # End Date
+        ctk.CTkLabel(filter_frame, text="To:", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(0, 10))
+        self.analytics_end = DateEntry(filter_frame, width=12, background='darkblue',
+                                     foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.analytics_end.pack(side="left", padx=(0, 20), ipady=4)
+
+        # Generate Button
+        generate_btn = ctk.CTkButton(
+            filter_frame, 
+            text="Generate Report", 
+            font=("Segoe UI", 12, "bold"),
+            fg_color="#27ae60",
+            hover_color="#2ecc71",
+            command=self.generate_analytics # We will build this function next!
+        )
+        generate_btn.pack(side="right")
+
+        # ==========================================
+        # MIDDLE ROW: KPI Cards
+        # ==========================================
+        kpi_frame = ctk.CTkFrame(dash_win, fg_color="transparent")
+        kpi_frame.pack(fill="x", padx=20, pady=10)
+        
+        # We use a grid layout here so the 3 boxes space out perfectly
+        kpi_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
+        # Card 1: Conversion Rate
+        card1 = ctk.CTkFrame(kpi_frame, fg_color="#2c3e50", corner_radius=10)
+        card1.grid(row=0, column=0, padx=10, sticky="ew")
+        ctk.CTkLabel(card1, text="Conversion Rate", font=("Segoe UI", 14), text_color="#bdc3c7").pack(pady=(10,0))
+        self.kpi_conversion = ctk.CTkLabel(card1, text="--%", font=("Segoe UI", 28, "bold"), text_color="#2ecc71")
+        self.kpi_conversion.pack(pady=(0,10))
+
+        # Card 2: Average Transaction Value (ATV)
+        card2 = ctk.CTkFrame(kpi_frame, fg_color="#2c3e50", corner_radius=10)
+        card2.grid(row=0, column=1, padx=10, sticky="ew")
+        ctk.CTkLabel(card2, text="Avg. Transaction Value", font=("Segoe UI", 14), text_color="#bdc3c7").pack(pady=(10,0))
+        self.kpi_atv = ctk.CTkLabel(card2, text="-- LBP", font=("Segoe UI", 24, "bold"), text_color="#f1c40f")
+        self.kpi_atv.pack(pady=(0,10))
+
+        # Card 3: Total Footfall
+        card3 = ctk.CTkFrame(kpi_frame, fg_color="#2c3e50", corner_radius=10)
+        card3.grid(row=0, column=2, padx=10, sticky="ew")
+        ctk.CTkLabel(card3, text="Total Footfall", font=("Segoe UI", 14), text_color="#bdc3c7").pack(pady=(10,0))
+        self.kpi_footfall = ctk.CTkLabel(card3, text="--", font=("Segoe UI", 28, "bold"), text_color="#3498db")
+        self.kpi_footfall.pack(pady=(0,10))
+
+        # ==========================================
+        # BOTTOM AREA: The Graph Canvas
+        # ==========================================
+        self.graph_frame = ctk.CTkFrame(dash_win)
+        self.graph_frame.pack(fill="both", expand=True, padx=20, pady=(10, 20))
+        
+        # A placeholder label until we paint the graph over it
+        self.graph_placeholder = ctk.CTkLabel(self.graph_frame, text="Select a date range and click Generate Report.", text_color="gray")
+        self.graph_placeholder.pack(expand=True)
+
+
+    def generate_analytics(self):
+        try:
+            # 1. Grab user inputs
+            branch = self.analytics_branch.get()
+            
+            # tkcalendar uses get_date() to return a clean datetime object
+            start_date = self.analytics_start.get_date().strftime('%Y-%m-%d')
+            end_date = self.analytics_end.get_date().strftime('%Y-%m-%d')
+
+            # 2. Extract Data using Pandas directly from your SQLite connection
+            query = "SELECT * FROM daily_metrics"
+            df = pd.read_sql_query(query, self.db.conn)
+
+            # If database is totally empty, stop here
+            if df.empty:
+                self.kpi_footfall.configure(text="0")
+                self.kpi_conversion.configure(text="0.0%")
+                return
+
+            # 3. Filter by Date Range
+            df['date'] = pd.to_datetime(df['date'])
+            mask = (df['date'] >= start_date) & (df['date'] <= end_date)
+            df = df.loc[mask]
+
+            # 4. Filter by Physical Branches
+            if branch == "All Physical Stores":
+                df = df[df['branch'].isin(self.physical_branches)]
+            else:
+                df = df[df['branch'] == branch]
+
+            # ==========================================
+            # 5. Calculate KPIs (Including ATV)
+            # ==========================================
+            total_footfall = int(df['footfall'].sum()) if not df.empty else 0
+            total_receipts = int(df['receipts'].sum()) if not df.empty else 0
+
+            # Conversion Rate
+            if total_footfall > 0:
+                conv_rate = (total_receipts / total_footfall) * 100
+            else:
+                conv_rate = 0.0
+
+            # Average Transaction Value (ATV)
+            # Grab the revenue from your sales table
+            # Average Transaction Value (ATV)
+            try:
+                sales_query = "SELECT * FROM daily_sales" 
+                sales_df = pd.read_sql_query(sales_query, self.db.conn)
+                
+                if not sales_df.empty:
+                    sales_df['date'] = pd.to_datetime(sales_df['date'])
+                    sales_mask = (sales_df['date'] >= start_date) & (sales_df['date'] <= end_date)
+                    sales_df = sales_df.loc[sales_mask]
+                    
+                    # --- NEW: ID Mapping Logic ---
+                    store_map = {"LeMall": 1, "City Center": 2, "City Mall": 3, "Tripoli": 4, "Koura": 5}
+                    
+                    if branch == "All Physical Stores":
+                        # Filter by ALL the IDs in our map
+                        sales_df = sales_df[sales_df['store_id'].isin(store_map.values())]
+                    else:
+                        # Filter by the specific ID of the selected branch
+                        sales_df = sales_df[sales_df['store_id'] == store_map[branch]]
+                    # -----------------------------
+                        
+                    total_revenue = sales_df['amount'].sum() 
+                    
+                    if total_receipts > 0:
+                        atv = total_revenue / total_receipts
+                    else:
+                        atv = 0
+                else:
+                    atv = 0
+            except Exception as e:
+                print(f"Could not calculate ATV: {e}")
+                atv = 0
+
+            # ==========================================
+            # 6. Update the UI Cards
+            # ==========================================
+            self.kpi_footfall.configure(text=f"{total_footfall:,}")
+            self.kpi_conversion.configure(text=f"{conv_rate:.1f}%")
+            
+            # Display ATV cleanly with commas and LBP label
+            if atv > 0:
+                self.kpi_atv.configure(text=f"{atv:,.0f} LBP")
+            else:
+                self.kpi_atv.configure(text="-- LBP")
+
+            # ==========================================
+            # 7. DRAW THE GRAPH
+            # ==========================================
+            
+            # Group data by date (Crucial for "All Stores" so it sums the traffic for each day)
+            daily_data = df.groupby('date')[['footfall', 'receipts']].sum().reset_index()
+
+            # Destroy the placeholder text or old graph if it exists
+            for widget in self.graph_frame.winfo_children():
+                widget.destroy()
+
+            # Create a Matplotlib Figure (Styled for Dark Mode)
+            fig = plt.Figure(figsize=(8, 4), dpi=100, facecolor='#2b2b2b')
+            ax = fig.add_subplot(111)
+            ax.set_facecolor('#2b2b2b')
+
+            if not daily_data.empty:
+                # Plot the lines
+                ax.plot(daily_data['date'], daily_data['footfall'], marker='o', color='#3498db', label='Footfall', linewidth=2)
+                ax.plot(daily_data['date'], daily_data['receipts'], marker='s', color='#2ecc71', label='Receipts', linewidth=2)
+
+                # Style the axes and text for dark mode
+                ax.tick_params(colors='white')
+                for spine in ax.spines.values():
+                    spine.set_color('#7f8c8d')
+                
+                ax.set_title(f"Traffic vs. Receipts: {branch}", color='white', pad=10)
+                ax.legend(facecolor='#2b2b2b', edgecolor='#7f8c8d', labelcolor='white')
+                
+                # Auto-rotate the dates on the bottom so they don't overlap
+                fig.autofmt_xdate() 
+            else:
+                # Display a nice message if they pick a weekend or day with zero data
+                ax.text(0.5, 0.5, "No Data Found for this Range", color="#bdc3c7", ha='center', va='center', fontsize=12)
+
+            # Paint the Matplotlib graph onto the CustomTkinter frame
+            canvas = FigureCanvasTkAgg(fig, master=self.graph_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        except Exception as e:
+            print(f"Analytics Error: {e}")
 
     def toggle_category_state(self, choice=None):
         current_type = self.type_combo.get()
