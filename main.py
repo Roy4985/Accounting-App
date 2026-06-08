@@ -294,11 +294,11 @@ class StoreApp:
         self.system_accounts = ["Main Vault", "TVA Account", "Bank Commission", "Cost of goods", "Freight"]
 
         self.physical_branches = [
-            "LeMall", 
+            "LeMall Dbayye", 
             "City Center", 
             "City Mall", 
             "Tripoli", 
-            "Koura"
+            "Koura Branch"
         ]
 
         self.category_list = [
@@ -329,7 +329,7 @@ class StoreApp:
             "Various",
         ]
 
-        self.warehouse_category_list = [
+        self.Eshop_category_list = [
             "Delivery",
             "Charges",
             "Social Media",
@@ -642,8 +642,8 @@ class StoreApp:
         else:
             if store == "Main Vault":
                 valid_categories = self.main_category_list
-            elif store == "Warehouse":
-                valid_categories = self.warehouse_category_list
+            elif store == "Eshop":
+                valid_categories = self.Eshop_category_list
             else:
                 valid_categories = self.category_list
 
@@ -1371,7 +1371,7 @@ class StoreApp:
         # ==========================================
         # BOTTOM AREA: The Graph Canvas
         # ==========================================
-        self.graph_frame = ctk.CTkFrame(dash_win)
+        self.graph_frame = ctk.CTkScrollableFrame(dash_win)
         self.graph_frame.pack(fill="both", expand=True, padx=20, pady=(10, 20))
         
         # A placeholder label until we paint the graph over it
@@ -1433,16 +1433,24 @@ class StoreApp:
                     sales_mask = (sales_df['date'] >= start_date) & (sales_df['date'] <= end_date)
                     sales_df = sales_df.loc[sales_mask]
                     
-                    # --- NEW: ID Mapping Logic ---
-                    store_map = {"LeMall": 1, "City Center": 2, "City Mall": 3, "Tripoli": 4, "Koura": 5}
+                    # ==========================================
+                    # --- NEW: Dynamic ID Mapping ---
+                    # ==========================================
+                    stores_df = pd.read_sql_query("SELECT * FROM stores", self.db.conn)
+                    
+                    id_col = 'store_id' if 'store_id' in stores_df.columns else 'id'
+                    dynamic_store_map = dict(zip(stores_df['name'], stores_df[id_col]))
                     
                     if branch == "All Physical Stores":
-                        # Filter by ALL the IDs in our map
-                        sales_df = sales_df[sales_df['store_id'].isin(store_map.values())]
+                        physical_ids = [dynamic_store_map[b] for b in self.physical_branches if b in dynamic_store_map]
+                        sales_df = sales_df[sales_df['store_id'].isin(physical_ids)]
                     else:
-                        # Filter by the specific ID of the selected branch
-                        sales_df = sales_df[sales_df['store_id'] == store_map[branch]]
-                    # -----------------------------
+                        if branch in dynamic_store_map:
+                            real_id = dynamic_store_map[branch]
+                            sales_df = sales_df[sales_df['store_id'] == real_id]
+                        else:
+                            sales_df = pd.DataFrame() 
+                    # ==========================================
                         
                     total_revenue = sales_df['amount'].sum() 
                     
@@ -1462,11 +1470,15 @@ class StoreApp:
             self.kpi_footfall.configure(text=f"{total_footfall:,}")
             self.kpi_conversion.configure(text=f"{conv_rate:.1f}%")
             
-            # Display ATV cleanly with commas and LBP label
+            # --- NEW: Convert ATV to USD ---
+            exchange_rate = self.db.get_rate("exchange_rate") # Current market rate (update this if the rate changes)
+            
             if atv > 0:
-                self.kpi_atv.configure(text=f"{atv:,.0f} LBP")
+                atv_usd = atv / exchange_rate
+                # Display with a dollar sign and 2 decimal places for cents (e.g., $37.89)
+                self.kpi_atv.configure(text=f"${atv_usd:,.2f}")
             else:
-                self.kpi_atv.configure(text="-- LBP")
+                self.kpi_atv.configure(text="--")
 
             # ==========================================
             # 7. DRAW THE GRAPH
@@ -1489,6 +1501,24 @@ class StoreApp:
                 ax.plot(daily_data['date'], daily_data['footfall'], marker='o', color='#3498db', label='Footfall', linewidth=2)
                 ax.plot(daily_data['date'], daily_data['receipts'], marker='s', color='#2ecc71', label='Receipts', linewidth=2)
 
+                # --- NEW: Add exact values on top of the points ---
+                # Label Footfall points (Blue)
+                for index, row in daily_data.iterrows():
+                    ax.annotate(f"{int(row['footfall'])}", 
+                                (row['date'], row['footfall']), 
+                                textcoords="offset points", 
+                                xytext=(0, 8), # Push the text 8 pixels UP from the dot
+                                ha='center', color='#3498db', fontsize=9, fontweight='bold')
+                    
+                # Label Receipts points (Green)
+                for index, row in daily_data.iterrows():
+                    ax.annotate(f"{int(row['receipts'])}", 
+                                (row['date'], row['receipts']), 
+                                textcoords="offset points", 
+                                xytext=(0, 8), 
+                                ha='center', color='#2ecc71', fontsize=9, fontweight='bold')
+                # --------------------------------------------------
+
                 # Style the axes and text for dark mode
                 ax.tick_params(colors='white')
                 for spine in ax.spines.values():
@@ -1507,6 +1537,62 @@ class StoreApp:
             canvas = FigureCanvasTkAgg(fig, master=self.graph_frame)
             canvas.draw()
             canvas.get_tk_widget().pack(fill="both", expand=True)
+
+            # ==========================================
+            # 7. Calculate Daily Index Data
+            # ==========================================
+            try:
+                # Group data by date
+                daily_traffic = df.groupby('date')[['footfall', 'receipts']].sum().reset_index()
+                
+                # Group sales if they exist, otherwise create empty table
+                if not sales_df.empty:
+                    daily_revenue = sales_df.groupby('date')['amount'].sum().reset_index()
+                else:
+                    daily_revenue = pd.DataFrame(columns=['date', 'amount'])
+
+                # Merge the two tables together by date
+                merged_daily = pd.merge(daily_traffic, daily_revenue, on='date', how='left')
+                merged_daily['amount'] = merged_daily['amount'].fillna(0)
+
+                # Calculate Index: (Revenue / Exchange Rate) / Footfall
+                merged_daily['index_usd'] = merged_daily.apply(
+                    lambda row: (row['amount'] / exchange_rate) / row['footfall'] if row['footfall'] > 0 else 0, 
+                    axis=1
+                )
+
+                # ==========================================
+                # 8. Render the Index Column Graph
+                # ==========================================
+                # Create a new Matplotlib figure for the bar chart
+                fig_index, ax_index = plt.subplots(figsize=(10, 3), facecolor='#2b2b2b')
+                ax_index.set_facecolor('#2b2b2b')
+
+                # Draw the bars (Gold color) and save them to a variable
+                bars = ax_index.bar(merged_daily['date'], merged_daily['index_usd'], color='#f1c40f', width=0.6)
+                
+                # --- NEW: Auto-label the exact USD values on top of the bars ---
+                ax_index.bar_label(bars, fmt='$%.2f', padding=4, color='white', fontsize=9, fontweight='bold')
+                
+                # Style the graph
+                ax_index.set_title(f'Daily Index (USD per Visitor): {branch}', color='white', fontsize=12)
+                ax_index.tick_params(axis='x', colors='white', rotation=45)
+                ax_index.tick_params(axis='y', colors='white')
+                ax_index.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: f"${x:,.2f}"))
+
+                for spine in ax_index.spines.values():
+                    spine.set_color('#555555')
+
+                fig_index.tight_layout()
+
+                # Embed it into the UI right below the first graph
+                # NOTE: Change 'self.graph_frame' below if your parent frame is named something else!
+                canvas_index = FigureCanvasTkAgg(fig_index, master=self.graph_frame) 
+                canvas_index.draw()
+                canvas_index.get_tk_widget().pack(fill="both", expand=True, pady=(20, 0))
+                
+            except Exception as e:
+                print(f"Could not render Index graph: {e}")
 
         except Exception as e:
             print(f"Analytics Error: {e}")
@@ -1531,8 +1617,8 @@ class StoreApp:
                     self.cat_combo.configure(values =[] , state="normal")
                     self.cat_combo.set("")
                 
-            elif current_store == "Warehouse":
-                new_values = self.warehouse_category_list
+            elif current_store == "Eshop":
+                new_values = self.Eshop_category_list
                 self.cat_combo.configure(values = new_values, state="readonly")
                 self.cat_combo.set(new_values[0])
 
@@ -1779,13 +1865,13 @@ class StoreApp:
             if f_type == "Income":
                 new_values += ["Sales", "Investment"] + extra_filters
             elif f_type == "Expense":
-                if current_store == "Warehouse":
-                    new_values = self.warehouse_category_list + extra_filters
+                if current_store == "Eshop":
+                    new_values = self.Eshop_category_list + extra_filters
                 else:
                     new_values += self.category_list + extra_filters
             else: #If all is selected
-                if current_store == "Warehouse":
-                    new_values = self.warehouse_category_list + extra_filters + ["Sales", "Investment"]
+                if current_store == "Eshop":
+                    new_values = self.Eshop_category_list + extra_filters + ["Sales", "Investment"]
                 else:
                     new_values += self.category_list + ["Sales", "Investment"] + extra_filters
 
